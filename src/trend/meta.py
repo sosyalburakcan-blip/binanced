@@ -475,6 +475,13 @@ def iter_merged(symbols: list[str], loader: Callable[[str], pd.DataFrame], symbo
                 sel &= (ot < piece.hi).to_numpy()
             part = df.loc[sel].assign(open_time=ot[sel]).sort_values("open_time", kind="mergesort")
             if piece.old_cut is not None and len(part) and part["open_time"].max() >= piece.old_cut:
+                # Varsayım: tablodaki son işlemden sonra hacmi sıfır olan mumlar işlem görmemiş bayat kayıtlardır
+                # (ör. KLAYUSDT 1d 2024-10-29/30) ve atılır; hacmi olan mumlar kalır (sınırı veri belirler).
+                stale = (part["open_time"] >= piece.old_cut) & (part["volume"] <= 0)
+                if stale.any():
+                    warnings.append(f"{piece.symbol}: old_last_trade sonrasındaki {int(stale.sum())} sıfır hacimli mum atıldı ({interval})")
+                    part = part.loc[~stale]
+            if piece.old_cut is not None and len(part) and part["open_time"].max() >= piece.old_cut:
                 warnings.append(f"{piece.symbol}: tablodaki old_last_trade sonrasında {int((part['open_time'] >= piece.old_cut).sum())} mum var ({interval})")
             if piece.new_cut is not None and len(part) and part["open_time"].min() < piece.new_cut:
                 warnings.append(f"{piece.symbol}: tablodaki new_first_trade öncesinde {int((part['open_time'] < piece.new_cut).sum())} mum var ({interval})")

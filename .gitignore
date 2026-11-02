@@ -8,3 +8,5 @@ data/merged/
 backtests/
 *.parquet
 !tests/fixtures/**/*.parquet
+data/*.log
+data/ledger.csv

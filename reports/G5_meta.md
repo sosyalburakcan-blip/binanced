@@ -9,10 +9,12 @@ verildiğinde bu bölüme tarih ve onaylayan yazılmalı ve `experiments.md`'ye 
 
 Kullanıcının karar vermesi gerekenler:
 
-1. `symbol_map.csv` içindeki 33 satırın tamamı (SPEC'teki 14 doğrulanmış satır + SPEC adaylarından 8 satır + G5'te
-   bulunan 9 ek satır + oran yönü veriden doğrulanacak 2 aday).
-2. `BTCSTUSDT` ve `DREPUSDT` (`candidate`): duyurular "1:10" ve "100:1" diyor ama hangi tarafın eski olduğunu açıkça
-   yazmıyor. Veri inince bölünme kontrolü (`split_candidate` işaretinin `k` değeri) yönü gösterecek.
+1. `symbol_map.csv` içindeki 43 satırın tamamı (SPEC'teki 14 doğrulanmış satır + SPEC adaylarından 8 satır + G5'te
+   bulunan 9 ek satır + BTCST/DREP bölünmeleri + evren adaylarından eklenen 10 satır; aşağıdaki "Evren adayları
+   incelemesi" bölümüne bakın).
+2. `BTCSTUSDT` ve `DREPUSDT`: yön veriden ve duyuru metninden çözüldü, ikisi de artık `verified=yes`. BTCST 1 eski =
+   10 yeni (son eski kapanış 374,996 → ilk yeni açılış 37,499); DREP 100 eski = 1 yeni (0,026288 → 2,629). Duyurular
+   "swap the old ... tokens with the new ... tokens at a ratio of 1:10 / 100:1" diyor (eski:yeni sırası).
 3. Veriden bulunan adaylar (`meta/symbol_map_candidates.csv`, veri inince üretilir).
 4. `fee_promotions.csv` kapsamı: yalnız maker **ve** taker ücretinin herkes için sıfır olduğu kampanyalar alındı
    (aşağıya bakın). Sadece maker'ı sıfır olan kampanyaların da eklenip eklenmeyeceği.
@@ -130,6 +132,60 @@ python -m uv run python -m trend.meta merged --interval 1h
 python -m uv run python -m trend.meta report            # bu dosyanın otomatik bölümünü yeniler
 ```
 
+## Evren adayları incelemesi (34 aday)
+
+Kaynak: `reports/G5_candidates_relevant.csv` (aylık top-50 evrenine giren coinlere dokunan otomatik adaylar). Her
+adayın tarihi `data/clean/1h` ile karşılaştırıldı: eklenen 10 satırın hepsinde eski çiftin son 1h mumu tablodaki son
+işlemden bir saat önce açılıyor ve yeni çiftin ilk 1h mumu tablodaki açılış saatine denk geliyor. Sonuç: **10 eklendi,
+24 sahte, 0 doğrulanamadı.** Eklenenlerin hepsi binance.com duyurusuyla `verified=yes`; hepsi 1:1 (`RENAME`).
+
+| Aday | Karar | Gerekçe / kaynak |
+| --- | --- | --- |
+| POLY → POLYX | eklendi | 1:1, 2022-10-10 03:00 → 2022-10-17 08:00 ([Binance](https://www.binance.com/en/support/announcement/binance-will-support-the-polymath-poly-mainnet-swap-and-rebranding-plan-to-polymesh-polyx-25556b2e078740f1b1e7357a7aa6a94d)); %11'lik fiyat farkı bir haftalık boşluktan |
+| 1INCHDOWN → BICO | sahte | Kaldıraçlı token (BLVT) kapandı; BICO ilgisiz yeni listeleme, oran tesadüf |
+| AAVEDOWN → ENS | sahte | BLVT; ENS ilgisiz, eski çift kapanmadan bir gün önce açılmış |
+| ANY → MULTI | eklendi | 1:1, 2022-03-30 04:00 → 2022-04-06 04:00 ([Binance](https://www.binance.com/en/support/announcement/d14ebaed2c2d40d591ad377653009151)) |
+| BCHUP → ACH | sahte | BLVT; ACH ilgisiz yeni listeleme |
+| BKRW → SAND | sahte | BKRW (KRW stablecoin) kapandı; SAND ilgisiz yeni listeleme |
+| BTCDOWN → WIF | sahte | BLVT; WIF ilgisiz yeni listeleme |
+| COMBO → GUN | sahte | COMBO 2025-03-28'de delist edildi, halefi yok ([Binance](https://www.binance.com/en/support/announcement/detail/db7ad1c7aa6248cda735102cdcdc4b8d)); GUN ilgisiz |
+| COMBO → PARTI | sahte | Aynı delist; PARTI, COMBO kapanmadan 3 gün önce açılmış |
+| DAI → SRM | sahte | DAI (≈1 $ stablecoin) çifti kapandı; SRM ilgisiz, bir gün önce açılmış |
+| EOSBULL → DATA | sahte | Tüm FTX kaldıraçlı tokenları (EOSBULL dahil) 2020-03-31 10:00'da delist edildi ([Binance](https://www.binance.com/en/support/announcement/360041613471)); DATA ilgisiz |
+| EOSUP → JOE | sahte | BLVT; JOE ilgisiz yeni listeleme |
+| ETHUP → WIF | sahte | BLVT; WIF ilgisiz yeni listeleme |
+| FRONT → SLF | eklendi | 1:1, 2024-08-27 03:00 → 2024-08-30 08:00 ([Binance](https://www.binance.com/en/support/announcement/binance-will-support-the-frontier-front-token-swap-and-rebranding-to-self-chain-slf-3ab5488a00e04d4fb338c77ea28326a8)); toplam arz 90M → 360M oldu ama takas oranı 1:1 |
+| FXS → FRAX | eklendi | 1:1, 2026-01-13 03:00 → 2026-01-15 08:00 ([Binance](https://www.binance.com/en/support/announcement/detail/a17352ba70414c96882cd881591dd36d)) |
+| ICX → STXB | sahte | ICX 2026-09-03 03:00'te delist edildi ([Binance](https://www.binance.com/en/support/announcement/detail/d72915ed7a60473b92f0818d959a227a)); STXB ilgisiz (fiyat ≈800 $) |
+| KLAY → KAIA | eklendi | 1:1, 2024-10-28 03:00 → 2024-10-31 08:00 ([Binance](https://www.binance.com/en/support/articles/f75f933759ee49d0af1dfbce7e32144c)); not: 1d veride 10-29 ve 10-30 hacimsiz düz mumlar var |
+| LIT → HEI | eklendi | 1:1, 2025-02-10 03:00 → 2025-02-13 08:00 ([Binance](https://www.binance.com/en/support/announcement/detail/2a9feaa556f74dcdaa2192366f0e247c)) |
+| NANO → ACA | sahte | NANO'nun halefi XNO; ACA (Acala) ilgisiz yeni listeleme |
+| NANO → XNO | eklendi | Ticker değişimi 1:1, 2022-01-24 04:00 → 2022-01-28 08:00 (04:00'ten ertelendi) ([Binance](https://www.binance.com/en/support/announcement/binance-will-update-the-ticker-of-nano-to-xno-3dc8f6de281f4781a246a1658a21cb80), [erteleme](https://www.binance.com/en/support/announcement/cd532840bd764ec19fdd486b53600650)) |
+| OAX → PENGU | sahte | OAX 2024-12-10'da delist edildi ([Binance](https://www.binance.com/en/support/announcement/131b75b63a71490393034f36de70c92c)); PENGU ilgisiz |
+| REN → 1000CAT | sahte | REN aynı duyuruyla delist edildi; 1000CAT ilgisiz |
+| STORJ → HIMSB | sahte | STORJ 2026-09-03'te ICX ile birlikte delist edildi; HIMSB ilgisiz (fiyat ≈28 $) |
+| STORM → STMX | eklendi | 1:1, 2020-06-08 03:00 → 2020-06-11 03:00 ([Binance](https://www.binance.com/en/support/announcement/storm-storm-token-swap-to-stmx-will-be-supported-on-binance-360043990532)) |
+| STPT → A | sahte | STPT'nin halefi AWE; A, EOS'un yeni adı (tabloda EOS → A satırı var) |
+| STPT → AWE | eklendi | 1:1, 2025-05-19 03:00 → 2025-05-21 08:00 ([Binance](https://www.binance.com/en/support/announcement/detail/f653fab995c348f8a7d510354f475023)) |
+| TON → COINB | sahte | TON'un halefi GRAM; COINB ilgisiz (fiyat ≈169 $) |
+| TON → GRAM | eklendi | 1:1, 2026-06-30 03:00 → 2026-07-02 08:00 ([Binance](https://www.binance.com/en/support/announcement/detail/fe307fba935b44698fde4db01e84a7eb)) |
+| TON → SOXLB | sahte | TON'un halefi GRAM; SOXLB ilgisiz (fiyat ≈175 $) |
+| UNIDOWN → JOE | sahte | BLVT; JOE ilgisiz yeni listeleme |
+| USDSB → XTZ | sahte | USDSB (stablecoin) kapandı; XTZ ilgisiz, 3 gün önce açılmış |
+| WAVES → ZRO | sahte | WAVES 2024-06-17'de delist edildi ([Binance](https://www.binance.com/en/support/announcement/f65faeeefe07417a8b6dd2900ba8da7e)); ZRO ilgisiz |
+| XLMUP → HIGH | sahte | BLVT; HIGH ilgisiz yeni listeleme |
+| XMR → AXL | sahte | XMR 2024-02-20'de delist edildi ([Binance](https://www.binance.com/en/support/announcement/f73b083ba6834771b07dbe5319917ae5)); AXL ilgisiz |
+
+Notlar:
+- Sahte adaylar tabloya girmedi; bu çiftler motorda delist kuralıyla kapanır. COMBO zinciri (COCOS → COMBO) 2025-03-28'de
+  delist ile biter.
+- `KLAYUSDT` 1d temiz verisinde 2024-10-29 ve 2024-10-30 için hacmi sıfır, fiyatı sabit iki mum var (1h veri
+  2024-10-28 02:00'de bitiyor). Birleştirmede sınırı veri belirlediği için bu iki mum KAIA serisinin önünde kalabilir.
+  Kalite adımında elenmesi gerekebilir.
+- Mevcut satır uyuşmazlığı (değiştirilmedi): `NPXSUSDT → PUNDIXUSDT` tabloda ve duyuruda son işlem 2021-04-05 04:00,
+  ama 1h veride 04:00–05:00 mumunda 4100 işlem var. Gerçek kapanış duyurudan en fazla bir saat sonra olmuş. Farklı
+  sembollü geçişte sınırı veri belirlediği için yalnız uyarı üretir.
+
 ## Otomatik bölüm
 
 <!-- AUTO:BEGIN (python -m trend.meta report ile yeniden üretilir) -->
@@ -140,7 +196,7 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 - `meta/fee_promotions.csv`: geçerli
 - `meta/delist_announcements.csv`: geçerli
 
-### symbol_map.csv (33 satır; yes: 31, candidate: 2)
+### symbol_map.csv (43 satır; yes: 43, candidate: 0)
 
 | # | old_symbol | new_symbol | type | ratio | old_last_trade_utc | new_first_trade_utc | source | verified | onay |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -175,8 +231,18 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | 29 | SUNUSDT | SUNUSDT | REDENOM | 1000 | 2021-06-14 04:00 | 2021-06-18 04:00 | Binance (1 SUN eski = 1000 SUN yeni; SUN/USDT 2021-06-14 04:00 delist, 2021-06-18 04:00 yeniden açıldı) https://www.binance.com/en/support/announcement/f923f2e4056843a9a9b87beb2aaa2f31 | yes | Onay bekliyor |
 | 30 | COCOSUSDT | COCOSUSDT | REDENOM | 0.001 | 2021-01-19 02:00 | 2021-01-23 02:00 | Binance (eski:yeni = 1000:1; COCOS/USDT 2021-01-19 02:00 durdu, 2021-01-23 02:00 yeniden açıldı) https://www.binance.com/en/support/announcement/f555f8013eff42bc9c91eaa48b9da24b | yes | Onay bekliyor |
 | 31 | COCOSUSDT | COMBOUSDT | RENAME | 1 | 2023-05-29 08:00 | 2023-06-02 08:00 | Binance (1 COCOS = 1 COMBO; COCOS spot 2023-05-29 08:00 delist; COMBO/USDT 2023-06-02 08:00) https://www.binance.com/en/support/announcement/45852dc155b641bc9e1c23bc41d8ded6 | yes | Onay bekliyor |
-| 32 | BTCSTUSDT | BTCSTUSDT | REDENOM | 10 | 2021-03-15 07:00 | 2021-03-19 07:00 | Binance ('1:10 redenomination'; BTCST/USDT 2021-03-15 07:00 durdu, 2021-03-19 07:00 yeniden açıldı) https://www.binance.com/en/support/announcement/2c08ba9e1a1b409fb6a4a2cb2f5ed58b — oranın yönü (1 eski = 10 yeni) metinde açık değil, bölünme kontrolüyle doğrulanmalı | candidate | Onay bekliyor |
-| 33 | DREPUSDT | DREPUSDT | REDENOM | 0.01 | 2021-03-29 04:00 | 2021-04-02 04:00 | Binance ('100:1 redenomination'; güncel takvim: DREP/USDT 2021-03-29 04:00 durdu, 2021-04-02 04:00 açıldı) https://www.binance.com/en/support/announcement/a2c87d5944cd4856af5aabd2cb8f68b4 — yön (100 eski = 1 yeni) başlıktan çıkarıldı, bölünme kontrolüyle doğrulanmalı | candidate | Onay bekliyor |
+| 32 | BTCSTUSDT | BTCSTUSDT | REDENOM | 10 | 2021-03-15 07:00 | 2021-03-19 07:00 | Binance ('swap the old BTCST tokens with the new BTCST tokens at a ratio of 1:10' = 1 eski : 10 yeni; BTCST/USDT 2021-03-15 07:00 durdu, 2021-03-19 07:00 yeniden açıldı) https://www.binance.com/en/support/announcement/2c08ba9e1a1b409fb6a4a2cb2f5ed58b ; arzın 10 katına çıktığı: https://www.bitdegree.org/cryptocurrency-prices/btc-standard-hashrate-token-btcst-price ; veri: son eski 1d kapanış 374.996 → ilk yeni açılış 37.499 (÷10) | yes | Onay bekliyor |
+| 33 | DREPUSDT | DREPUSDT | REDENOM | 0.01 | 2021-03-29 04:00 | 2021-04-02 04:00 | Binance ('swap the old DREP tokens with the new DREP tokens at a ratio of 100:1' = 100 eski : 1 yeni) ilk duyuru https://www.binance.com/en/support/articles/51eb4f0351194fab957bb23cc6ee52dd ; güncel takvim (DREP/USDT 2021-03-29 04:00 durdu, 2021-04-02 04:00 açıldı) https://www.binance.com/en/support/announcement/a2c87d5944cd4856af5aabd2cb8f68b4 ; tamamlanma https://www.binance.com/en/support/articles/01c27af4303d4d668c8ab2bbc7c79319 ; veri: son eski 1d kapanış 0.026288 → ilk yeni açılış 2.629 (×100) | yes | Onay bekliyor |
+| 34 | STORMUSDT | STMXUSDT | RENAME | 1 | 2020-06-08 03:00 | 2020-06-11 03:00 | Binance (1 STORM = 1 STMX; STORM işlemi 2020-06-08 03:00 durdu; STMX/USDT 2020-06-11 03:00) https://www.binance.com/en/support/announcement/storm-storm-token-swap-to-stmx-will-be-supported-on-binance-360043990532 (duyuru STORM çiftlerini saymıyor; STORMUSDT veride 2020-06-08 02:00 mumunda bitiyor) | yes | Onay bekliyor |
+| 35 | NANOUSDT | XNOUSDT | RENAME | 1 | 2022-01-24 04:00 | 2022-01-28 08:00 | Binance (1 NANO = 1 XNO; NANO spot 2022-01-24 04:00 durdu; XNO/USDT açılışı 04:00'tan 2022-01-28 08:00'e ertelendi) https://www.binance.com/en/support/announcement/binance-will-update-the-ticker-of-nano-to-xno-3dc8f6de281f4781a246a1658a21cb80 ; erteleme https://www.binance.com/en/support/announcement/cd532840bd764ec19fdd486b53600650 ; tamamlanma https://www.binance.com/en/support/announcement/binance-completes-nano-to-xno-ticker-change-and-opens-deposits-withdrawals-for-xno-7bf2ebcf81614d7d81e080f36d225015 | yes | Onay bekliyor |
+| 36 | ANYUSDT | MULTIUSDT | RENAME | 1 | 2022-03-30 04:00 | 2022-04-06 04:00 | Binance (1 ANY = 1 MULTI; ANY spot 2022-03-30 04:00 delist; MULTI/USDT 2022-04-06 04:00) https://www.binance.com/en/support/announcement/d14ebaed2c2d40d591ad377653009151 ; tamamlanma https://www.binance.com/en/support/announcement/binance-has-completed-the-anyswap-any-token-migration-and-renaming-plan-cd39354caeee4361badf9a57e92cd5da | yes | Onay bekliyor |
+| 37 | POLYUSDT | POLYXUSDT | RENAME | 1 | 2022-10-10 03:00 | 2022-10-17 08:00 | Binance (1 POLY = 1 POLYX; POLY spot 2022-10-10 03:00 delist; POLYX/USDT 2022-10-17 08:00) https://www.binance.com/en/support/announcement/binance-will-support-the-polymath-poly-mainnet-swap-and-rebranding-plan-to-polymesh-polyx-25556b2e078740f1b1e7357a7aa6a94d ; tamamlanma https://www.binance.com/en/support/announcement/binance-has-completed-the-polymath-poly-mainnet-swap-and-rebranding-plan-to-polymesh-polyx-9f6c57e9fa924eeab275f410332df567 | yes | Onay bekliyor |
+| 38 | FRONTUSDT | SLFUSDT | RENAME | 1 | 2024-08-27 03:00 | 2024-08-30 08:00 | Binance (1 FRONT = 1 SLF; FRONT spot 2024-08-27 03:00 delist; SLF/USDT 2024-08-30 08:00; toplam arz 90M → 360M ama takas oranı 1:1) https://www.binance.com/en/support/announcement/binance-will-support-the-frontier-front-token-swap-and-rebranding-to-self-chain-slf-3ab5488a00e04d4fb338c77ea28326a8 ; tamamlanma https://www.binance.com/en/support/announcement/binance-has-completed-the-frontier-front-token-swap-and-rebranding-to-self-chain-slf-65f69bc68ca64182b6df3d958f14f38e | yes | Onay bekliyor |
+| 39 | KLAYUSDT | KAIAUSDT | RENAME | 1 | 2024-10-28 03:00 | 2024-10-31 08:00 | Binance (1 KLAY = 1 KAIA; KLAY spot 2024-10-28 03:00 delist; KAIA/USDT 2024-10-31 08:00) https://www.binance.com/en/support/articles/f75f933759ee49d0af1dfbce7e32144c (1d temiz veride KLAYUSDT 2024-10-29 ve 10-30 hacimsiz düz mumlar; 1h 2024-10-28 02:00'de bitiyor) | yes | Onay bekliyor |
+| 40 | LITUSDT | HEIUSDT | RENAME | 1 | 2025-02-10 03:00 | 2025-02-13 08:00 | Binance (1 LIT = 1 HEI; LIT spot 2025-02-10 03:00 delist; HEI/USDT 2025-02-13 08:00) https://www.binance.com/en/support/announcement/detail/2a9feaa556f74dcdaa2192366f0e247c | yes | Onay bekliyor |
+| 41 | STPTUSDT | AWEUSDT | RENAME | 1 | 2025-05-19 03:00 | 2025-05-21 08:00 | Binance (1 STPT = 1 AWE; STPT spot 2025-05-19 03:00 delist; AWE/USDT 2025-05-21 08:00) https://www.binance.com/en/support/announcement/detail/f653fab995c348f8a7d510354f475023 ; tamamlanma https://www.binance.com/en/support/announcement/detail/ad0f6c6b7d6640eea285538c96e2cd42 | yes | Onay bekliyor |
+| 42 | FXSUSDT | FRAXUSDT | RENAME | 1 | 2026-01-13 03:00 | 2026-01-15 08:00 | Binance (1 FXS = 1 FRAX; FXS/USDT 2026-01-13 03:00 delist; FRAX/USDT 2026-01-15 08:00) https://www.binance.com/en/support/announcement/detail/a17352ba70414c96882cd881591dd36d ; tamamlanma https://www.binance.com/en/support/announcement/detail/f9daf68cb1214dbeb2ed97af2684b5d8 | yes | Onay bekliyor |
+| 43 | TONUSDT | GRAMUSDT | RENAME | 1 | 2026-06-30 03:00 | 2026-07-02 08:00 | Binance (1 TON = 1 GRAM; TON spot 2026-06-30 03:00 kaldırıldı; GRAM/USDT 2026-07-02 08:00) https://www.binance.com/en/support/announcement/detail/fe307fba935b44698fde4db01e84a7eb ; tamamlanma https://www.binance.com/en/support/announcement/detail/8177254072cf4da3b9d8fcaacceb0a2c | yes | Onay bekliyor |
 
 ### fee_promotions.csv (26 satır)
 
@@ -220,11 +286,10 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 
 ### Veriden bulunan adaylar (`meta/symbol_map_candidates.csv`)
 
-112 aday (yöntem: pair_round_ratio 102, split_check 8, pair_name_hint 1, pair_round_ratio+pair_name_hint 1).
+97 aday (yöntem: pair_round_ratio 88, split_check 8, pair_round_ratio+pair_name_hint 1).
 
 | old_symbol | new_symbol | type | ratio | old_last_trade_utc | new_first_trade_utc | method | detail |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| POLYUSDT | POLYXUSDT | REDENOM | 1.12474 | 2022-10-10 | 2022-10-17 | pair_name_hint | gap_days=7;price_old=0.2696;price_new=0.2397;log10_ratio=0.0511;within_split_tol=False |
 | 1INCHDOWNUSDT | BICOUSDT | REDENOM | 0.001 | 2021-12-02 | 2021-12-09 | pair_round_ratio | gap_days=7;price_old=0.006148;price_new=5.631;log10_ratio=-2.9619;within_split_tol=False |
 | AAVEDOWNUSDT | ENSUSDT | REDENOM | 0.0001 | 2021-11-11 | 2021-11-10 | pair_round_ratio | gap_days=-1;price_old=0.004673;price_new=43.66;log10_ratio=-3.9705;within_split_tol=False |
 | AAVEDOWNUSDT | POWRUSDT | REDENOM | 0.01 | 2021-11-11 | 2021-11-17 | pair_round_ratio | gap_days=6;price_old=0.004673;price_new=0.5233;log10_ratio=-2.0492;within_split_tol=False |
@@ -237,7 +302,6 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | ALCXUSDT | NBISBUSDT | REDENOM | 0.01 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=1.91;price_new=213.02;log10_ratio=-2.0474;within_split_tol=False |
 | ALCXUSDT | QCOMBUSDT | REDENOM | 0.01 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=1.91;price_new=186.48;log10_ratio=-1.9896;within_split_tol=True |
 | ALCXUSDT | SOXLBUSDT | REDENOM | 0.01 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=1.91;price_new=175.1;log10_ratio=-1.9623;within_split_tol=False |
-| ANYUSDT | MULTIUSDT | RENAME | 1.0 | 2022-03-30 | 2022-04-06 | pair_round_ratio | gap_days=7;price_old=12.3;price_new=13.15;log10_ratio=-0.0290;within_split_tol=False |
 | ARDRUSDT | CBRSBUSDT | REDENOM | 0.0001 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=0.02096;price_new=192.01;log10_ratio=-3.9619;within_split_tol=False |
 | ARDRUSDT | GLWBUSDT | REDENOM | 0.0001 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=0.02096;price_new=194.8;log10_ratio=-3.9682;within_split_tol=False |
 | ARDRUSDT | IBMBUSDT | REDENOM | 0.0001 | 2026-07-10 | 2026-07-15 | pair_round_ratio | gap_days=5;price_old=0.02096;price_new=217.07;log10_ratio=-4.0152;within_split_tol=True |
@@ -274,20 +338,14 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | ETHDOWNUSDT | PORTALUSDT | RENAME | 1.0 | 2024-02-28 | 2024-02-29 | pair_round_ratio | gap_days=1;price_old=0.0457;price_new=0.05;log10_ratio=-0.0391;within_split_tol=False |
 | ETHUPUSDT | AXLUSDT | REDENOM | 10.0 | 2024-02-28 | 2024-03-01 | pair_round_ratio | gap_days=2;price_old=11.651;price_new=1.2071;log10_ratio=0.9846;within_split_tol=True |
 | ETHUPUSDT | WIFUSDT | REDENOM | 10.0 | 2024-02-28 | 2024-03-05 | pair_round_ratio | gap_days=6;price_old=11.651;price_new=1.1892;log10_ratio=0.9911;within_split_tol=True |
-| FRONTUSDT | SLFUSDT | RENAME | 1.0 | 2024-08-27 | 2024-08-30 | pair_round_ratio | gap_days=3;price_old=0.88;price_new=0.88;log10_ratio=0.0000;within_split_tol=True |
-| FXSUSDT | FRAXUSDT | RENAME | 1.0 | 2026-01-13 | 2026-01-15 | pair_round_ratio | gap_days=2;price_old=0.812;price_new=0.812;log10_ratio=0.0000;within_split_tol=True |
 | GFTUSDT | MOVEUSDT | REDENOM | 0.1 | 2024-12-03 | 2024-12-09 | pair_round_ratio | gap_days=6;price_old=0.00196;price_new=0.02;log10_ratio=-1.0088;within_split_tol=True |
 | HARDUSDT | HYPERUSDT | REDENOM | 0.1 | 2025-04-16 | 2025-04-22 | pair_round_ratio | gap_days=6;price_old=0.0095;price_new=0.09;log10_ratio=-0.9765;within_split_tol=False |
 | HARDUSDT | KERNELUSDT | REDENOM | 0.1 | 2025-04-16 | 2025-04-14 | pair_round_ratio | gap_days=-2;price_old=0.0095;price_new=0.1;log10_ratio=-1.0223;within_split_tol=False |
 | ICXUSDT | STXBUSDT | REDENOM | 1e-05 | 2026-09-03 | 2026-09-02 | pair_round_ratio | gap_days=-1;price_old=0.00841;price_new=816.64;log10_ratio=-4.9872;within_split_tol=True |
-| KLAYUSDT | KAIAUSDT | RENAME | 1.0 | 2024-10-30 | 2024-10-31 | pair_round_ratio | gap_days=1;price_old=0.1255;price_new=0.1255;log10_ratio=0.0000;within_split_tol=True |
-| LITUSDT | HEIUSDT | RENAME | 1.0 | 2025-02-10 | 2025-02-13 | pair_round_ratio | gap_days=3;price_old=0.743;price_new=0.743;log10_ratio=0.0000;within_split_tol=True |
 | LTCDOWNUSDT | ACAUSDT | RENAME | 1.0 | 2022-01-27 | 2022-01-25 | pair_round_ratio | gap_days=-2;price_old=2.2279;price_new=2;log10_ratio=0.0469;within_split_tol=False |
 | LTCDOWNUSDT | XNOUSDT | RENAME | 1.0 | 2022-01-27 | 2022-01-28 | pair_round_ratio | gap_days=1;price_old=2.2279;price_new=2.224;log10_ratio=0.0008;within_split_tol=True |
 | LTOUSDT | LAUSDT | REDENOM | 0.01 | 2025-07-04 | 2025-07-09 | pair_round_ratio | gap_days=5;price_old=0.0038;price_new=0.4;log10_ratio=-2.0223;within_split_tol=False |
 | MBOXUSDT | EWYBUSDT | REDENOM | 1e-05 | 2026-06-19 | 2026-06-23 | pair_round_ratio | gap_days=4;price_old=0.0021;price_new=196.16;log10_ratio=-4.9704;within_split_tol=False |
-| NANOUSDT | ACAUSDT | RENAME | 1.0 | 2022-01-24 | 2022-01-25 | pair_round_ratio | gap_days=1;price_old=2.224;price_new=2;log10_ratio=0.0461;within_split_tol=False |
-| NANOUSDT | XNOUSDT | RENAME | 1.0 | 2022-01-24 | 2022-01-28 | pair_round_ratio | gap_days=4;price_old=2.224;price_new=2.224;log10_ratio=0.0000;within_split_tol=True |
 | NFPUSDT | CBRSBUSDT | REDENOM | 1e-05 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=0.00181;price_new=192.01;log10_ratio=-5.0256;within_split_tol=False |
 | NFPUSDT | COINBUSDT | REDENOM | 1e-05 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=0.00181;price_new=168.87;log10_ratio=-4.9699;within_split_tol=False |
 | NFPUSDT | GLWBUSDT | REDENOM | 1e-05 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=0.00181;price_new=194.8;log10_ratio=-5.0319;within_split_tol=False |
@@ -300,18 +358,11 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | PDAUSDT | STOUSDT | REDENOM | 0.1 | 2025-05-02 | 2025-05-02 | pair_round_ratio | gap_days=0;price_old=0.00977;price_new=0.0956;log10_ratio=-0.9906;within_split_tol=True |
 | PIVXUSDT | DJTBUSDT | REDENOM | 0.001 | 2026-08-17 | 2026-08-26 | pair_round_ratio | gap_days=9;price_old=0.0097;price_new=9.4;log10_ratio=-2.9864;within_split_tol=True |
 | PLAUSDT | PDAUSDT | RENAME | 1.0 | 2024-02-26 | 2024-03-01 | pair_round_ratio | gap_days=4;price_old=0.2347;price_new=0.2347;log10_ratio=0.0000;within_split_tol=True |
-| POLYUSDT | NEBLUSDT | REDENOM | 0.1 | 2022-10-10 | 2022-10-14 | pair_round_ratio | gap_days=4;price_old=0.2696;price_new=2.89;log10_ratio=-1.0302;within_split_tol=False |
 | PONDUSDT | RKLBBUSDT | REDENOM | 1e-05 | 2026-07-10 | 2026-07-15 | pair_round_ratio | gap_days=5;price_old=0.00081;price_new=78.81;log10_ratio=-4.9881;within_split_tol=True |
 | PONDUSDT | SPYBUSDT | REDENOM | 1e-06 | 2026-07-10 | 2026-07-07 | pair_round_ratio | gap_days=-3;price_old=0.00081;price_new=751.28;log10_ratio=-5.9673;within_split_tol=False |
 | RENUSDT | 1000CATUSDT | RENAME | 1.0 | 2024-12-10 | 2024-12-17 | pair_round_ratio | gap_days=7;price_old=0.04274;price_new=0.03918;log10_ratio=0.0378;within_split_tol=False |
 | STORJUSDT | HIMSBUSDT | REDENOM | 0.001 | 2026-09-03 | 2026-09-09 | pair_round_ratio | gap_days=6;price_old=0.0298;price_new=28.17;log10_ratio=-2.9756;within_split_tol=False |
-| STORMUSDT | STMXUSDT | RENAME | 1.0 | 2020-06-08 | 2020-06-11 | pair_round_ratio | gap_days=3;price_old=0.003397;price_new=0.003332;log10_ratio=0.0084;within_split_tol=True |
-| STPTUSDT | AUSDT | REDENOM | 0.1 | 2025-05-19 | 2025-05-28 | pair_round_ratio | gap_days=9;price_old=0.07042;price_new=0.7799;log10_ratio=-1.0443;within_split_tol=False |
-| STPTUSDT | AWEUSDT | RENAME | 1.0 | 2025-05-19 | 2025-05-21 | pair_round_ratio | gap_days=2;price_old=0.07042;price_new=0.07042;log10_ratio=0.0000;within_split_tol=True |
 | SUSHIDOWNUSDT | CVXUSDT | RENAME | 1.0 | 2021-12-14 | 2021-12-23 | pair_round_ratio | gap_days=9;price_old=37.37;price_new=38.51;log10_ratio=-0.0131;within_split_tol=True |
-| TONUSDT | COINBUSDT | REDENOM | 0.01 | 2026-06-30 | 2026-07-07 | pair_round_ratio | gap_days=7;price_old=1.6;price_new=168.87;log10_ratio=-2.0234;within_split_tol=False |
-| TONUSDT | GRAMUSDT | RENAME | 1.0 | 2026-06-30 | 2026-07-02 | pair_round_ratio | gap_days=2;price_old=1.6;price_new=1.6;log10_ratio=0.0000;within_split_tol=True |
-| TONUSDT | SOXLBUSDT | REDENOM | 0.01 | 2026-06-30 | 2026-07-07 | pair_round_ratio | gap_days=7;price_old=1.6;price_new=175.1;log10_ratio=-2.0392;within_split_tol=False |
 | UFTUSDT | HYPERUSDT | REDENOM | 0.1 | 2025-04-16 | 2025-04-22 | pair_round_ratio | gap_days=6;price_old=0.0089;price_new=0.09;log10_ratio=-1.0049;within_split_tol=True |
 | UNIDOWNUSDT | JOEUSDT | RENAME | 1.0 | 2021-12-23 | 2021-12-28 | pair_round_ratio | gap_days=5;price_old=2.172;price_new=2.21;log10_ratio=-0.0075;within_split_tol=True |
 | UNIDOWNUSDT | OOKIUSDT | REDENOM | 100.0 | 2021-12-23 | 2021-12-24 | pair_round_ratio | gap_days=1;price_old=2.172;price_new=0.02156;log10_ratio=2.0032;within_split_tol=True |
@@ -339,7 +390,7 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 
 ### Birleştirilmiş varlıklar (`meta/asset_segments.csv`)
 
-756 varlık; birden fazla parçalı: 22.
+746 varlık; birden fazla parçalı: 34.
 
 | asset_id | source_symbol | start | end | ratio |
 | --- | --- | --- | --- | --- |
@@ -347,15 +398,21 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | AAVEUSDT | AAVEUSDT | 2020-10-15 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | AUSDT | EOSUSDT | 2018-05-28 00:00:00 | 2025-05-26 00:00:00 | 1.0 |
 | AUSDT | AUSDT | 2025-05-28 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| AWEUSDT | STPTUSDT | 2020-03-25 00:00:00 | 2025-05-19 00:00:00 | 1.0 |
+| AWEUSDT | AWEUSDT | 2025-05-21 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | BCHUSDT | BCHABCUSDT | 2018-11-16 00:00:00 | 2019-11-27 00:00:00 | 1.0 |
 | BCHUSDT | BCHUSDT | 2019-11-28 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | BEAMXUSDT | MCUSDT | 2021-12-02 00:00:00 | 2023-11-07 00:00:00 | 100.0 |
 | BEAMXUSDT | BEAMXUSDT | 2023-11-14 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| BTCSTUSDT | BTCSTUSDT | 2021-01-13 00:00:00 | 2021-03-15 00:00:00 | 10.0 |
+| BTCSTUSDT | BTCSTUSDT | 2021-03-19 00:00:00 | 2022-11-28 00:00:00 | 1.0 |
 | BTTCUSDT | BTTUSDT | 2019-01-31 00:00:00 | 2022-01-17 00:00:00 | 1000.0 |
 | BTTCUSDT | BTTCUSDT | 2022-01-25 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | COMBOUSDT | COCOSUSDT | 2019-08-21 00:00:00 | 2021-01-19 00:00:00 | 0.001 |
 | COMBOUSDT | COCOSUSDT | 2021-01-23 00:00:00 | 2023-05-29 00:00:00 | 1.0 |
 | COMBOUSDT | COMBOUSDT | 2023-06-02 00:00:00 | 2025-03-28 00:00:00 | 1.0 |
+| DREPUSDT | DREPUSDT | 2020-01-16 00:00:00 | 2021-03-29 00:00:00 | 0.01 |
+| DREPUSDT | DREPUSDT | 2021-04-02 00:00:00 | 2024-04-03 00:00:00 | 1.0 |
 | EGLDUSDT | ERDUSDT | 2019-07-04 00:00:00 | 2020-08-31 00:00:00 | 0.001 |
 | EGLDUSDT | EGLDUSDT | 2020-09-03 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | FIROUSDT | XZCUSDT | 2020-04-07 00:00:00 | 2021-01-25 00:00:00 | 1.0 |
@@ -363,14 +420,26 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | FORMUSDT | BNXUSDT | 2021-11-04 00:00:00 | 2023-02-16 00:00:00 | 100.0 |
 | FORMUSDT | BNXUSDT | 2023-02-22 00:00:00 | 2025-03-18 00:00:00 | 1.0 |
 | FORMUSDT | FORMUSDT | 2025-03-19 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| FRAXUSDT | FXSUSDT | 2021-12-10 00:00:00 | 2026-01-13 00:00:00 | 1.0 |
+| FRAXUSDT | FRAXUSDT | 2026-01-15 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| GRAMUSDT | TONUSDT | 2024-08-08 00:00:00 | 2026-06-30 00:00:00 | 1.0 |
+| GRAMUSDT | GRAMUSDT | 2026-07-02 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | GUSDT | GALUSDT | 2022-05-05 00:00:00 | 2024-07-15 00:00:00 | 60.0 |
 | GUSDT | GUSDT | 2024-07-19 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| HEIUSDT | LITUSDT | 2021-02-04 00:00:00 | 2025-02-10 00:00:00 | 1.0 |
+| HEIUSDT | HEIUSDT | 2025-02-13 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | HIFIUSDT | MFTUSDT | 2019-08-27 00:00:00 | 2023-01-03 00:00:00 | 0.01 |
 | HIFIUSDT | HIFIUSDT | 2023-01-12 00:00:00 | 2025-09-17 00:00:00 | 1.0 |
+| KAIAUSDT | KLAYUSDT | 2021-06-24 00:00:00 | 2024-10-28 00:00:00 | 1.0 |
+| KAIAUSDT | KAIAUSDT | 2024-10-31 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| MULTIUSDT | ANYUSDT | 2021-12-04 00:00:00 | 2022-03-30 00:00:00 | 1.0 |
+| MULTIUSDT | MULTIUSDT | 2022-04-06 00:00:00 | 2024-02-20 00:00:00 | 1.0 |
 | OOKIUSDT | BZRXUSDT | 2020-08-31 00:00:00 | 2021-12-20 00:00:00 | 10.0 |
 | OOKIUSDT | OOKIUSDT | 2021-12-24 00:00:00 | 2024-11-06 00:00:00 | 1.0 |
 | POLUSDT | MATICUSDT | 2019-04-26 00:00:00 | 2024-09-10 00:00:00 | 1.0 |
 | POLUSDT | POLUSDT | 2024-09-13 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| POLYXUSDT | POLYUSDT | 2021-09-09 00:00:00 | 2022-10-10 00:00:00 | 1.0 |
+| POLYXUSDT | POLYXUSDT | 2022-10-17 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | PUNDIXUSDT | NPXSUSDT | 2019-08-13 00:00:00 | 2021-04-05 00:00:00 | 0.001 |
 | PUNDIXUSDT | PUNDIXUSDT | 2021-04-09 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | QUICKUSDT | QUICKUSDT | 2021-08-13 00:00:00 | 2023-07-17 00:00:00 | 1000.0 |
@@ -379,6 +448,10 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | RENDERUSDT | RENDERUSDT | 2024-07-26 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 | SKYUSDT | MKRUSDT | 2020-07-23 00:00:00 | 2025-09-15 00:00:00 | 24000.0 |
 | SKYUSDT | SKYUSDT | 2025-09-17 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
+| SLFUSDT | FRONTUSDT | 2021-10-04 00:00:00 | 2024-08-27 00:00:00 | 1.0 |
+| SLFUSDT | SLFUSDT | 2024-08-30 00:00:00 | 2025-09-17 00:00:00 | 1.0 |
+| STMXUSDT | STORMUSDT | 2019-08-27 00:00:00 | 2020-06-08 00:00:00 | 1.0 |
+| STMXUSDT | STMXUSDT | 2020-06-11 00:00:00 | 2025-02-24 00:00:00 | 1.0 |
 | STRAXUSDT | STRATUSDT | 2020-02-19 00:00:00 | 2020-11-12 00:00:00 | 10.0 |
 | STRAXUSDT | STRAXUSDT | 2020-11-18 00:00:00 | 2024-03-20 00:00:00 | 10.0 |
 | STRAXUSDT | STRAXUSDT | 2024-03-28 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
@@ -390,5 +463,7 @@ python -m uv run python -m trend.meta report            # bu dosyanın otomatik 
 | VANRYUSDT | VANRYUSDT | 2023-12-01 00:00:00 | 2026-08-17 00:00:00 | 1.0 |
 | VICUSDT | TOMOUSDT | 2019-08-24 00:00:00 | 2023-11-20 00:00:00 | 1.0 |
 | VICUSDT | VICUSDT | 2023-11-24 00:00:00 | 2026-08-17 00:00:00 | 1.0 |
+| XNOUSDT | NANOUSDT | 2019-04-03 00:00:00 | 2022-01-24 00:00:00 | 1.0 |
+| XNOUSDT | XNOUSDT | 2022-01-28 00:00:00 | 2026-11-01 00:00:00 | 1.0 |
 
 <!-- AUTO:END -->
