@@ -1,0 +1,9 @@
+old_symbol,new_symbol,type,ratio,old_last_trade_utc,new_first_trade_utc,source,verified
+OLDUSDT,NEWUSDT,RENAME,1,2021-01-10 03:00,2021-01-13 08:00,synthetic RENAME,yes
+ERDUSDT,EGLDUSDT,REDENOM,0.001,2021-02-05 02:00,2021-02-07 03:00,synthetic REDENOM (symbol change),yes
+BNXUSDT,BNXUSDT,REDENOM,100,2021-03-05,2021-03-11,synthetic same-symbol split with archive gap,yes
+BNXUSDT,FORMUSDT,RENAME,1,2021-05-01 03:00,2021-05-02 08:00,synthetic RENAME after split (chain),yes
+LUNAUSDT,LUNAUSDT,ASSET_CHANGE,,2021-04-13 00:40,2021-04-30 06:00,synthetic ASSET_CHANGE,yes
+LUNAUSDT,,DELIST,,2021-04-13 00:40,,synthetic DELIST of old USDT series,yes
+OCEANUSDT,FETUSDT,MERGE_INTO_EXISTING,0.433226,2021-06-01 03:00,,synthetic MERGE,yes
+CANDUSDT,CAND2USDT,RENAME,1,2021-01-20,2021-01-25,synthetic unverified,candidate

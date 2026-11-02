@@ -1,0 +1,5 @@
+symbol,announced_utc,delist_utc,kind,source
+LUNAUSDT,2022-05-13 00:40,2022-05-13 00:40,delist,Decrypt: kaldırma tweet ile kaldırma anında duyuruldu https://decrypt.co/100290/binance-halts-trading-terra-delists-luna-ust (duyuru zamanı = kaldırma zamanı varsayıldı)
+FTTUSDT,2022-11-14,2022-11-15 04:30,delist,"FTT/BTC, FTT/BNB, FTT/ETH, FTT/USDT kaldırıldı (FTT/BUSD kaldı): Decrypt 2022-11-14 https://decrypt.co/114361/binance-remove-trading-pairs-ftx-token-except-busd ; saat: https://fxnewsgroup.com/forex-news/cryptocurrency/binance-to-remove-several-ftt-pairs-from-list-of-trading-instruments/ (duyuru saati bilinmiyor, yalnız tarih) ; not: arşivde FTTUSDT serisi 2023-09-22'de yeniden başlıyor (trend.data.clean belgesi), delist kuralı ilk kapanışa uygulanır"
+OCEANUSDT,2024-06-14 10:30,2024-07-01 03:00,delist,FET birleşmesi (MERGE_INTO_EXISTING) https://www.binance.com/en/support/announcement/e485541c370240adba3929fded74f269
+AGIXUSDT,2024-06-14 10:30,2024-07-01 03:00,delist,FET birleşmesi (MERGE_INTO_EXISTING) https://www.binance.com/en/support/announcement/e485541c370240adba3929fded74f269

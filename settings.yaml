@@ -4,12 +4,15 @@
 
 paths:
   raw: data/raw                 # data.binance.vision ayna dizini (zip)
+  inventory: data/raw/_inventory.csv   # S3 listeleme envanteri
   clean: data/clean             # coin başına parquet: {clean}/{interval}/{SYMBOL}.parquet
+  merged: data/merged           # sembol haritası uygulanmış seriler: {merged}/{interval}/{ASSET_ID}.parquet
   ledger: data/ledger.csv       # indirme ve checksum defteri
   meta: meta                    # symbol_map.csv, fee_promotions.csv, delist_announcements.csv, symbols_raw.csv
   quality_flags: data/quality_flags.parquet
   universe: universe            # universe/{YYYY-MM}.csv
   reports: reports
+  rest_crosscheck: reports/G4_rest_crosscheck.csv
   backtests: backtests
   experiments: experiments.md
 
@@ -30,13 +33,17 @@ data:
   intervals_other_quotes: ["1d"]
   other_quotes: ["BUSD", "FDUSD", "USDC", "TUSD"]
   stable_usdt_pairs: ["USDCUSDT", "BUSDUSDT", "FDUSDUSDT", "TUSDUSDT"]
-  concurrency: 6                     # eş zamanlı indirme (spec: 4–8)
+  concurrency: 8                     # eş zamanlı indirme (spec: 4–8)
   max_retries: 5
   backoff_base_s: 1.0
   timestamp_us_threshold: 100000000000000   # > 1e14 ise mikrosaniye → 1000'e böl
   rest_klines_limit: 1000
   rest_weight_pause_frac: 0.80       # X-MBX-USED-WEIGHT-1M limitin %80'ine ulaşınca bekle
   rest_weight_limit_default: 6000    # güncel değer exchangeInfo.rateLimits'ten okunur
+  rest_max_429_retries: 5
+  http_timeout_s: [10, 60]           # (bağlantı, okuma)
+  progress_every_s: 15
+  panel_read_threads: 8
 
 quality:
   split_log10_tolerance: 0.02        # abs(log10(oran) − yuvarlak) < 0,02
@@ -46,6 +53,14 @@ quality:
   wick_high_mult: 3.0                # high > 3 × close → iğne
   rest_crosscheck_coins: 10
   rest_crosscheck_days: 20
+  rest_crosscheck_seed: 20261102
+  rest_rtol: 1.0e-9
+  excluding_severities: [error, exclude]   # günü "temiz değil" yapan işaret şiddetleri (evren 365 gün, sinyal 200 bar)
+
+meta:                                # sembol haritası aday arama (kullanıcı incelemesine gider)
+  pair_match_min_gap_days: -3
+  pair_match_max_gap_days: 10
+  pair_match_log10_tol: 0.05
 
 universe:
   min_clean_days: 365
@@ -53,10 +68,13 @@ universe:
   min_median_liquidity_usdt: 5000000
   size: 20                           # temel ayar (sermayeye göre: <3000 → 10, >15000 → 30)
   size_by_capital:                   # alt-coin sistemine ayrılan sermaye (USDT) → coin sayısı; önceden seçilir
-    - {max_capital: 3000, size: 10}
-    - {max_capital: 15000, size: 20}
+    - {max_capital: 3000, inclusive: false, size: 10}   # SPEC: 3.000'in altındaysa 10
+    - {max_capital: 15000, inclusive: true, size: 20}   # SPEC: 15.000'in üzerindeyse 30 → 15.000 dahil 20
     - {max_capital: null, size: 30}
-  stable_vol_fallback: {window_days: 90, max_std: 0.01}
+  stable_vol_fallback: {window_days: 90, max_std: 0.01, min_obs: 20}
+  conversion_ffill_days: 7           # {Q}USDT kapanışı eksikse en fazla kaç gün geriye taşınır
+  btc_asset: BTCUSDT
+  eth_asset: ETHUSDT
   exclude:
     stable_fiat: [USDC, BUSD, TUSD, USDP, PAX, FDUSD, DAI, USDS, USD1, USDE, UST, USTC, EURI, AEUR,
                   EUR, GBP, AUD, TRY, BRL, RUB, UAH, NGN, ZAR, BIDR, IDRT, BVND, BKRW, JPY, ARS, PLN, RON, MXN, COP, CZK]
@@ -137,6 +155,13 @@ evaluation:
   null_runs: 1000
   null_seed: 20261102
   dsr_n_min: 100
+  pbo_splits: 16                     # CSCV blok sayısı S (SPEC değer vermiyor; literatür varsayılanı)
+  cash_yield_spread_pp: 1.5          # "hazine bonosu − 1,5 puan" duyarlılığı
+  tbill_lag_days: 1                  # d günü gözlemi en erken d+1'de bilinir
+  tbill_max_stale_days: 10
+  worst_loss_min_exposure: 0.05
+  benchmark_sma: 200                 # BTC-200 ve BTC/ETH kıyaslarının SMA penceresi (rejim filtresinden bağımsız)
+  core_satellite_core_weights: [0.80, 0.50]   # T10: BTC-200 çekirdek payları
   drawdown_horizons: [30, 60, 90, 180, 365]
   satellite: {haircut: 0.5, weight: 0.20}
   grid:
