@@ -1,0 +1,159 @@
+# Trend Takip Sistemi — tüm parametreler (SPEC.md v3). Her parametre burada ve yalnızca burada tanımlanır.
+# Kod bu dosyayı trend.config.load_settings() ile okur; modüllerde sabit parametre tanımlanmaz.
+# Ön kayıttan (G9) sonra bu dosyadaki her değişiklik experiments.md'ye deneme olarak yazılır.
+
+paths:
+  raw: data/raw                 # data.binance.vision ayna dizini (zip)
+  clean: data/clean             # coin başına parquet: {clean}/{interval}/{SYMBOL}.parquet
+  ledger: data/ledger.csv       # indirme ve checksum defteri
+  meta: meta                    # symbol_map.csv, fee_promotions.csv, delist_announcements.csv, symbols_raw.csv
+  quality_flags: data/quality_flags.parquet
+  universe: universe            # universe/{YYYY-MM}.csv
+  reports: reports
+  backtests: backtests
+  experiments: experiments.md
+
+periods:
+  data_start: "2017-08-01"
+  warmup: ["2017-08-01", "2019-06-30"]       # sadece gösterge geçmişi; sonuç raporlanmaz
+  development: ["2019-07-01", "2023-12-31"]
+  validation_start: "2024-01-01"             # bitiş = kilit tarihi (G12)
+  regimes:
+    - ["2019-07-01", "2021-11-30"]
+    - ["2022-01-01", null]
+
+data:
+  archive_base: "https://data.binance.vision/data/spot"
+  s3_list_url: "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+  rest_base: "https://data-api.binance.vision"
+  intervals_usdt: ["1d", "1h"]
+  intervals_other_quotes: ["1d"]
+  other_quotes: ["BUSD", "FDUSD", "USDC", "TUSD"]
+  stable_usdt_pairs: ["USDCUSDT", "BUSDUSDT", "FDUSDUSDT", "TUSDUSDT"]
+  concurrency: 6                     # eş zamanlı indirme (spec: 4–8)
+  max_retries: 5
+  backoff_base_s: 1.0
+  timestamp_us_threshold: 100000000000000   # > 1e14 ise mikrosaniye → 1000'e böl
+  rest_klines_limit: 1000
+  rest_weight_pause_frac: 0.80       # X-MBX-USED-WEIGHT-1M limitin %80'ine ulaşınca bekle
+  rest_weight_limit_default: 6000    # güncel değer exchangeInfo.rateLimits'ten okunur
+
+quality:
+  split_log10_tolerance: 0.02        # abs(log10(oran) − yuvarlak) < 0,02
+  zero_volume_run_days: 3
+  max_abs_log_return: 0.50           # tek günlük mutlak log getiri > %50 → işaret
+  wick_low_frac: 0.30                # low < 0,3 × close → iğne
+  wick_high_mult: 3.0                # high > 3 × close → iğne
+  rest_crosscheck_coins: 10
+  rest_crosscheck_days: 20
+
+universe:
+  min_clean_days: 365
+  liquidity_window_days: 30
+  min_median_liquidity_usdt: 5000000
+  size: 20                           # temel ayar (sermayeye göre: <3000 → 10, >15000 → 30)
+  size_by_capital:                   # alt-coin sistemine ayrılan sermaye (USDT) → coin sayısı; önceden seçilir
+    - {max_capital: 3000, size: 10}
+    - {max_capital: 15000, size: 20}
+    - {max_capital: null, size: 30}
+  stable_vol_fallback: {window_days: 90, max_std: 0.01}
+  exclude:
+    stable_fiat: [USDC, BUSD, TUSD, USDP, PAX, FDUSD, DAI, USDS, USD1, USDE, UST, USTC, EURI, AEUR,
+                  EUR, GBP, AUD, TRY, BRL, RUB, UAH, NGN, ZAR, BIDR, IDRT, BVND, BKRW, JPY, ARS, PLN, RON, MXN, COP, CZK]
+    gold: [PAXG]
+    wrapped_staking: [WBTC, WBETH, BETH, BNSOL]
+    leveraged: [BTCUP, BTCDOWN, ETHUP, ETHDOWN, BNBUP, BNBDOWN, XRPUP, XRPDOWN, ADAUP, ADADOWN,
+                LINKUP, LINKDOWN, DOTUP, DOTDOWN, TRXUP, TRXDOWN, EOSUP, EOSDOWN, LTCUP, LTCDOWN,
+                XTZUP, XTZDOWN, BCHUP, BCHDOWN, FILUP, FILDOWN, YFIUP, YFIDOWN, SXPUP, SXPDOWN,
+                UNIUP, UNIDOWN, AAVEUP, AAVEDOWN, SUSHIUP, SUSHIDOWN, XLMUP, XLMDOWN, 1INCHUP, 1INCHDOWN]
+    exchange_tokens: [BNB, FTT]
+  tiers:
+    A: {symbols: [BTC, ETH], cap: 0.10}
+    B: {ranks: [3, 20], cap: 0.05}
+    C: {ranks: [21, 50], cap: 0.03}
+  slippage:                          # her yönde
+    A: 0.0005
+    by_liquidity:                    # B ve C: 30 günlük medyan likiditeye göre (USDT)
+      - {min_liquidity: 100000000, slippage: 0.0005}
+      - {min_liquidity: 20000000, slippage: 0.0010}
+      - {min_liquidity: 0, slippage: 0.0020}
+
+strategy:
+  spans: [20, 50, 100]
+  buffer_h: 0.5
+  min_signal_bars: 200
+  sigma_d_window: 30                 # tampon için günlük oynaklık (log getiri std)
+  vol_windows: [30, 90]
+  vol_min_obs: {30: 20, 90: 60}
+  vol_floor: 0.30                    # yıllık
+  annualization_days: 365
+  corr_halflife_days: 45
+  corr_shrinkage: 0.50               # sabit-korelasyon hedefine
+  target_vol: 0.35
+  gross_max: 1.0
+  bisection_tol: 1.0e-9
+  rebalance:
+    drift_rel: 0.25
+    drift_min: 0.005
+    mintrade_min_frac: 0.0025
+    mintrade_notional_mult: 1.1
+  weekly_entry:
+    enabled: true
+    entry_weekday: 6                 # pazar kapanışındaki karar (Python weekday: pazartesi=0 … pazar=6)
+  regime_filter:                     # T1
+    enabled: false
+    sma: 200
+    off_below: 0.97
+    on_above: 1.03
+  relative_strength:                 # T9
+    enabled: false
+    lookback: 30
+    upper_q: 0.6666666666666666
+    lower_q: 0.3333333333333333
+    exit_rel: -0.05
+  drawdown_hard_stop:
+    stop_at: -0.35                   # zirveden −%35 → yeni alım yok
+    resume_at: -0.25                 # backtestte yeniden başlatma
+
+backtest:
+  initial_capital: 10000
+  initial_capital_sensitivity: 2000
+  fill: vwap_00_02                   # vwap_00_02 | open_t1 (T3) | vwap_06_07 | vwap_14_15 (T4)
+  fill_windows:
+    vwap_00_02: [0, 2]
+    vwap_06_07: [6, 7]
+    vwap_14_15: [14, 15]
+  commission: 0.0010
+  delist_penalty: 0.05
+  delist_stale_days: 7
+  cost_multiplier: 1.0
+  cash_yield: zero                   # zero | tbill_minus_1_5 | tbill
+  min_order_usdt: 10
+  dust_zero: true
+
+evaluation:
+  sharpe_rf: us_tbill_3m
+  bootstrap: {mean_block_days: 30, paths: 10000, seed: 20261102}
+  null_runs: 1000
+  null_seed: 20261102
+  dsr_n_min: 100
+  drawdown_horizons: [30, 60, 90, 180, 365]
+  satellite: {haircut: 0.5, weight: 0.20}
+  grid:
+    target_vol: [0.25, 0.35, 0.45]
+    span_scale: [0.8, 1.0, 1.2]
+    universe_size: [20, 30, 50]
+    drift_rel: [0.15, 0.25, 0.35]
+    buffer_h: [0.0, 0.5, 1.0]
+
+live:
+  schedule_utc: "00:05"
+  deadman_utc: "01:00"
+  orderbook_snapshots_utc: ["00:05", "01:00", "06:00", "14:00"]
+  recv_window_ms: 5000
+  reconcile_tolerance: 0.005
+  exchange_share: [0.60, 0.70]
+  exchange_share_band: 0.10
+  usdt_depeg_warn: 0.01
+  usdt_depeg_exit: 0.02
+  intervention_wait_hours: 72
