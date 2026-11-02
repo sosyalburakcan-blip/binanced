@@ -849,9 +849,9 @@ def write_report(universe_dir: Path | str | None = None, report_path: Path | str
             lines += ["", "## Stablecoin yedek kontrolüyle (90 gün std < %1) dışlananlar", ""]
             lines += [f"- {m}: {s.replace(';', ', ')}" for m, s in fb.items()] or ["- Yok."]
     lines += ["", "## Varsayımlar", ""] + [f"- {a}" for a in ASSUMPTIONS]
-    lines += ["", "## settings.yaml'da olmayan parametreler (modül sabiti, TODO(settings))", "",
+    lines += ["", "## Bu çalıştırmada kullanılan ek parametreler (settings.yaml)", "",
               f"- paths.merged = `{MERGED_DIR_DEFAULT}`",
-              f"- universe.clean_day_bad_severities = {list(BAD_SEVERITIES)}",
+              f"- quality.excluding_severities = {list(BAD_SEVERITIES)}",
               f"- universe.stable_vol_fallback.min_obs = {STABLE_FALLBACK_MIN_OBS}",
               f"- universe.conversion_ffill_days = {CONVERSION_FFILL_DAYS}", ""]
     rpath.parent.mkdir(parents=True, exist_ok=True)

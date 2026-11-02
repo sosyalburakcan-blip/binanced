@@ -19,15 +19,15 @@ import numpy as np
 import pandas as pd
 
 from trend.backtest.interface import DayView, Decision, EngineData
+from trend.config import load_settings
 from trend.strategy.rebalance import ENTRY, EXIT, SKIP_MINTRADE, TIER
 from trend.strategy.signal import sma_on_valid
 from trend.strategy.system import BTC_ASSET, TrendStrategy
 
-# TODO(settings): universe.eth_asset — ETH'nin asset_id'si (BTC/ETH kıyası).
-ETH_ASSET = "ETHUSDT"
-# TODO(settings): evaluation.benchmark_sma — kıyaslardaki 200 günlük basit ortalama penceresi
-# (strategy.regime_filter.sma ile aynı değer; BTC-200 tanımı rejim filtresinden bağımsız olduğu için ayrı tutulmalı).
-BENCH_SMA = 200
+# ETH'nin asset_id'si (BTC/ETH kıyası).
+ETH_ASSET = load_settings()["universe"]["eth_asset"]
+# Kıyaslardaki SMA penceresi; BTC-200 tanımı rejim filtresinden bağımsız olduğu için ayrı tutulur.
+BENCH_SMA = int(load_settings()["evaluation"]["benchmark_sma"])
 
 
 class TargetWeightStrategy:

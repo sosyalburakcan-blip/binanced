@@ -1,0 +1,5 @@
+interval=1h assets=756 include_candidates=False
+UYARI BQXUSDT→VGXUSDT: temiz veride eksik çift, atlandı (1h)
+UYARI BCHAUSDT→XECUSDT: temiz veride eksik çift, atlandı (1h)
+ATLANDI (candidate) BTCSTUSDT->BTCSTUSDT REDENOM
+ATLANDI (candidate) DREPUSDT->DREPUSDT REDENOM

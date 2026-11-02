@@ -20,16 +20,17 @@ import numpy as np
 import pandas as pd
 
 from trend.backtest.interface import DayView, Decision, EngineData
+from trend.config import load_settings
 from trend.strategy.filters import RelativeStrengthGate, regime_state, relative_strength
 from trend.strategy.rebalance import FROZEN, rebalance_orders
 from trend.strategy.risk import EwmaCorrelation, annualized_vol, covariance, shrink_to_constant
 from trend.strategy.signal import log_returns, trend_signal
 from trend.strategy.sizing import solve_k
 
-# TODO(settings): quality.excluding_severities — temiz bar sayımından düşen işaret türleri (CONTRACTS §5).
-EXCLUDING_SEVERITIES = ("error", "exclude")
-# TODO(settings): universe.btc_asset — BTC'nin asset_id'si (rejim filtresi, T9, BTC-200).
-BTC_ASSET = "BTCUSDT"
+# Temiz bar sayımından düşen işaret türleri (CONTRACTS §5).
+EXCLUDING_SEVERITIES = tuple(load_settings()["quality"]["excluding_severities"])
+# BTC'nin asset_id'si (rejim filtresi, T9, BTC-200).
+BTC_ASSET = load_settings()["universe"]["btc_asset"]
 
 
 def min_obs_for(table: dict, window: int) -> int:

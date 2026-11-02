@@ -83,6 +83,11 @@ index = gün/saat etiketi (tz-naive UTC `DatetimeIndex`), kolonlar = asset_id. E
 
 ## 8. Geleceği görme koruması
 
-- Strateji ve evren kodu, t günündeki karar için yalnızca index ≤ t olan veriyi görmelidir.
-- Motor stratejiye veriyi **t'de kesilmiş görünüm** olarak verir; kesilmemiş paneli strateji koduna geçirmez.
+- Strateji ve evren kodu, t günündeki karar için yalnızca index ≤ t olan veriyi kullanmalıdır.
+- Motor günlük karar için stratejiye **t'de kesilmiş görünüm** (`DayView`) verir. İstisna: göstergeler (EMA, σ,
+  korelasyon, tampon durumu) hız için tam panel üzerinde **nedensel** olarak bir kez ön hesaplanır. Bunun güvenliği
+  iki testle sağlanır: (1) zorunlu test 1 ve (2) t satırındaki ön hesaplanmış göstergenin, veri t'de kesilerek
+  yeniden hesaplanan değerle aynı olması.
 - Zorunlu test 1: t sonrasındaki fiyat ve meta veri rastgele bozulduğunda t'ye kadarki tüm kararlar aynı kalmalı.
+- Kalite işaretleri çift sembolüyle (§5) tutulur; motora verilmeden önce `quality.flags_to_assets` ile
+  `asset_segments` üzerinden asset_id'ye eşlenir.

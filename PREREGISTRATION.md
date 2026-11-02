@@ -117,5 +117,49 @@ değiştirme gerekçesi değildir.
 
 ## 10. Uygulama varsayımları (kodda da belirtilir)
 
-`CONTRACTS.md` zaman kuralı, evren zamanlaması ve veri biçimleri bu ön kaydın parçasıdır. Agentlerin uygulama
-sırasında yaptığı varsayımlar G9'da buraya listelenir.
+`CONTRACTS.md` zaman kuralı, evren zamanlaması ve veri biçimleri bu ön kaydın parçasıdır. SPEC'in açık bıraktığı
+yerlerde verilen kararlar aşağıdadır; hepsi kodda da yorum olarak yazılıdır. **Dondurmadan önce kullanıcı
+tarafından gözden geçirilmelidir.**
+
+**Veri ve kalite**
+
+- Yarım gün işareti her işlem diliminin ilk ve son mumunu kapsar (ilk mum, kesik `close_time`'lı mum, kesikten
+  sonra gelen ilk mum, çift gerçekten bittiyse son mum). Aktif çiftin en yeni mumu yarım gün sayılmaz.
+- Tekrar eden `open_time`: ilk satır tutulur (aylık > günlük dosya önceliği), çelişenler `duplicate_open_time` hatası.
+- Kalite işaretleri gün başına bir satırdır; sıfır hacim dizisinin ilk iki günü üçüncü günde bilinir; boşluk,
+  seri yeniden başladığı gün bilinir. Temiz gün = bar var, yarım gün değil, `error`/`exclude` işareti yok.
+- Sembol haritasında yalnızca `verified=yes` satırlar uygulanır.
+
+**Evren**
+
+- 365 temiz gün kümülatiftir (ardışık olması gerekmez); T günündeki yarım gün işareti yok sayılır.
+- Likiditede barı olmayan gün 0 sayılır; USDT çifti kampanyadayken de sayılır; stablecoin kapanışı en fazla 7 gün
+  geriye taşınır.
+- Kademe: A = BTC/ETH sıralarından bağımsız; diğerleri ham sıraya göre ≤ 20 → B, 21–50 → C.
+- Stablecoin yedek kontrolünden BTC ve ETH muaftır.
+
+**Strateji**
+
+- Tampon durum makinesi coinin 200. geçerli barında tamponsuz kuralla başlar ve evren üyeliğinden bağımsız işler.
+- EMA yalnızca geçerli kapanışlarla hesaplanır, boşlukta dondurulur; boşluğu aşan getiri σ'ya girmez; std ddof=1.
+- Oynaklık penceresinin en az gözlem şartı sağlanmazsa o bileşenin son geçerli değeri taşınır; hiç yoksa coin
+  ağırlık almaz.
+- Korelasyon: çift bazında eksik veriye dayanıklı, sıfır ortalamalı EWMA; ortak gözlem < 60 ise çift aktif kümenin
+  ortalama korelasyonuyla doldurulur; hiç bilinen çift yoksa 1 (kötümser); PSD değilse özdeğerler 0'a kırpılır.
+- "Artıran/azaltan" işlem Δ'nın işaretiyle belirlenir. −%35 sert sınırdayken bant alımları dahil tüm artırımlar durur.
+- T1: SMA200 oluşmadan rejim KAPALI. T9: kapı durumu coin adaydan düşünce sıfırlanır.
+
+**Motor**
+
+- Komisyon nakit olarak gerçekleşen tutardan alınır; T6 ×2 komisyon, kayma ve delist cezasını birlikte çarpar.
+- Delist kapanışı: dolum penceresi VWAP'ı, yoksa günlük VWAP, o da yoksa son kapanış; × (1 − ceza), üstüne komisyon.
+- Dolum yapılamayan emir düşer, ertesi günün kararı yeniden üretir. Orantılı küçültme dolum anındaki fiyatlarla.
+- 10 USDT altı tam çıkış artığı sıfır değerle silinir; çıkış dışı emirlerde 10 USDT filtresi karar anında uygulanır.
+- Kıyaslarda sert sınır yoktur; T10 dilimleri arası aktarım maliyetsiz sayılır; T6 kayıp tarihi G11'de önceden
+  seçilip buraya yazılır.
+
+**Değerlendirme**
+
+- Birincil test p = (1 + #{ΔSR* ≤ 0}) / (B + 1) (yüzdelik yöntemi, tek yönlü).
+- Hazine bonosu: günlük oran = y/100/365, 1 gün gecikmeli, yalnızca ileri taşınır, 10 günden bayatsa eksik.
+- Düşüş ufku tablosu: her bootstrap yolunun ilk h günü. PBO: CSCV, S = 16.

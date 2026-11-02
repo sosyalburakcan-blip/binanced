@@ -48,8 +48,8 @@ from trend.config import _deep_update, load_settings
 from trend.strategy.rebalance import EXIT, REASON_NAMES, SKIP_HARDSTOP, SKIP_MINORDER, mintrade
 from trend.strategy.system import BTC_ASSET, TrendStrategy
 
-# TODO(settings): backtest.tbill_haircut — "hazine bonosu − 1,5 puan" duyarlılığındaki indirim.
-TBILL_HAIRCUT = 0.015
+# "hazine bonosu − 1,5 puan" duyarlılığındaki indirim (puan → kesir).
+TBILL_HAIRCUT = float(load_settings()["evaluation"]["cash_yield_spread_pp"]) / 100.0
 
 
 @dataclass

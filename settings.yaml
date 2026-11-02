@@ -107,6 +107,8 @@ strategy:
   annualization_days: 365
   corr_halflife_days: 45
   corr_shrinkage: 0.50               # sabit-korelasyon hedefine
+  corr_min_obs: 60                   # çift korelasyonunun geçerli sayılması için en az ortak gözlem
+  corr_fallback: 1.0                 # hiç bilinen çift yoksa sabit korelasyon (kötümser)
   target_vol: 0.35
   gross_max: 1.0
   bisection_tol: 1.0e-9
@@ -148,6 +150,11 @@ backtest:
   cash_yield: zero                   # zero | tbill_minus_1_5 | tbill
   min_order_usdt: 10
   dust_zero: true
+  stress:                            # zorunlu stres varyantları
+    delist_penalties: [0.20, 0.50]   # T5
+    cost_multiplier: 2.0             # T6
+    exchange_losses: [0.20, 0.50]    # T6: borsadaki varlığın tek seferlik kaybı
+  t8_close_hours: [4, 8, 12, 16, 20] # T8: günlük mumun kapanış saatleri (UTC)
 
 evaluation:
   sharpe_rf: us_tbill_3m

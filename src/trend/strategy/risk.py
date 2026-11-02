@@ -23,12 +23,12 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from trend.config import load_settings
 from trend.strategy.signal import log_returns, rolling_std
 
-# TODO(settings): strategy.corr_min_obs — EWMA korelasyonunun geçerli sayılması için en az ortak gözlem.
-CORR_MIN_OBS = 60
-# TODO(settings): strategy.corr_fallback — hiç geçerli çift yoksa kullanılacak sabit korelasyon (kötümser).
-CORR_FALLBACK = 1.0
+# EWMA korelasyonunun geçerli sayılması için en az ortak gözlem; hiç geçerli çift yoksa sabit korelasyon (kötümser).
+CORR_MIN_OBS = int(load_settings()["strategy"]["corr_min_obs"])
+CORR_FALLBACK = float(load_settings()["strategy"]["corr_fallback"])
 
 
 def annualized_vol(

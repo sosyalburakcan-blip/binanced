@@ -52,12 +52,11 @@ BASE_VOLUME_COLS = ("volume", "taker_buy_base")
 
 # Birleştirilmiş seriler dizini (CONTRACTS §4).
 MERGED_DIR = load_settings()["paths"]["merged"]
-# TODO(settings): meta.pair_match_max_gap_days / pair_match_min_gap_days — aday arama penceresi (gün).
-PAIR_MATCH_MAX_GAP_DAYS = 10
-PAIR_MATCH_MIN_GAP_DAYS = -3
-# TODO(settings): meta.pair_match_log10_tol — çift eşleştirmede "yuvarlak oran" toleransı (fiyat boşlukta oynar;
+# Aday arama penceresi (gün) ve çift eşleştirmede "yuvarlak oran" toleransı (fiyat boşlukta oynar;
 # bölünme kontrolünün 0,02'sinden gevşek tutuldu, adaylar zaten kullanıcı incelemesine gider).
-PAIR_MATCH_LOG10_TOL = 0.05
+PAIR_MATCH_MAX_GAP_DAYS = int(load_settings()["meta"]["pair_match_max_gap_days"])
+PAIR_MATCH_MIN_GAP_DAYS = int(load_settings()["meta"]["pair_match_min_gap_days"])
+PAIR_MATCH_LOG10_TOL = float(load_settings()["meta"]["pair_match_log10_tol"])
 
 _SYMBOL_RE = re.compile(r"^[A-Z0-9]+$")
 
