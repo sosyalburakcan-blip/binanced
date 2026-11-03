@@ -1,0 +1,51 @@
+# Araştırma v4 — gün içi momentum, spot ve kaldıraçlı vadeli (PREREGISTRATION_v4.md).
+# Ön kayıttan (tag prereg-v4) sonra her değişiklik experiments.md'ye yazılır ve N'ye eklenir.
+
+lock_date: "2026-11-01"              # G12 anlık görüntüsüyle aynı veri sonu
+design: ["2019-07-01", "2023-12-31"]  # tasarım: en iyi listesi bu dönemde sıralanır, PBO, sıfırlar, kontroller
+holdout_start: "2024-01-01"           # kirlenmiş bekletme: en iyi listesinin seçimsiz sınavı
+end: "2026-11-01"
+warmup_days: 14                      # 168 saatlik oynaklık + 24 saatlik geriye bakış + 6 saatlik takip
+
+universe:                            # "bilinen, güvenilir coin" (nokta zamanlı, her ay)
+  top_n: 10                          # ana evrenin (likidite sırası) ilk 10'u
+  min_age_days: 730                  # ay başında en az 2 yıldır listelenmiş
+
+fixed:
+  vol_window_h: 168                  # z-skoru için saatlik oynaklık penceresi (7 gün)
+  n_top: 3                           # momentum listesi: her saat z'si en yüksek 3 coin
+  slots: 3                           # en fazla 3 eşzamanlı pozisyon, her biri özsermayenin 1/3'ü
+
+grid:                                # tam ızgara (4 × 3 × 3 × 3 × 3 × 2 = 648); hepsi raporlanır
+  lookback_h: [3, 6, 12, 24]         # momentum ufku (saat)
+  z_entry: [1.0, 1.5, 2.0]           # giriş eşiği: z = getiri / (σ_saat · √L)
+  confirm_h: [1, 3, 6]               # takip süresi: z eşiğin üstünde kaç saat üst üste kalmalı
+  tp: [0.01, 0.02, 0.04]             # kâr al
+  sl: [0.01, 0.02, 0.04]             # zarar kes
+  max_hold_h: [24, 72]               # en uzun tutma
+
+leverage: [1, 2, 3, 5]               # USDT-M vadeli; spot her zaman 1×
+
+costs:                               # reports/V4_fees_tax.md (araştırma, kaynaklı, 2026-11-03)
+  slip_default: 0.002                # evren kademesi yoksa (her yönde); kademeler v1 ile aynı (%0,05/%0,10/%0,20)
+  spot: {taker: 0.0010, maker: 0.0010}             # VIP 0, BNB indirimi yok (temel)
+  futures: {taker: 0.0005, maker: 0.0002, mmr: 0.010, liq_fee: 0.0}
+                                     # USDT-M VIP 0; bakım marjı tek temkinli değer (BTC/ETH %0,4, büyük altlar %0,5–0,65);
+                                     # izole marjin: tasfiyede marjinin tamamı kaybedilir (tasfiye ücreti kalanı aşar)
+  tax_per_side: {spot: 0.0, futures: 0.0}          # Türkiye: yürürlükte işlem vergisi/stopaj yok (temel)
+  spot_bnb_discount: 0.25            # duyarlılık: BNB ile ödeme (spot iki tarafa %25)
+  tr_tx_tax_sensitivity: 0.0003      # duyarlılık: geri çekilen "onbinde 3" işlem vergisi (yalnızca TR platform spot)
+  tr_gain_tax_rates: [0.15, 0.27, 0.40]   # duyarlılık: yıllık net kazanca düz gelir vergisi (USD, zarar devri yok)
+
+controls:
+  top_k: 10                          # kontroller ve sıfırlar en iyi 10 yapılandırma için
+  n_random: 100                      # rastgele giriş sıfırı tekrar sayısı (en iyi yapılandırma)
+  random_grids: 2                    # rastgele sinyalli tam ızgara tekrarı (veri madenciliği sıfırı)
+
+evaluation:
+  alpha: 0.05
+  toplist_size: 20
+  dsr_trials_prior: 75               # v1 35 + v2 27 + v3 13
+
+run:
+  workers: 5

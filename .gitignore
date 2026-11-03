@@ -10,3 +10,6 @@ backtests/
 !tests/fixtures/**/*.parquet
 data/*.log
 data/ledger.csv
+.env
+.env.*
+data/intraday/
