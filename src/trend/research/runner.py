@@ -38,7 +38,7 @@ STOP_KINDS = ("trend", "inverse")  # kıyas 6 (trend_equal) bir kıyastır: sert
 @dataclass(frozen=True)
 class RunSpec:
     name: str
-    kind: str = "trend"                 # trend | trend_equal | inverse | btc_200 | btc_eth_200 | btc_hold | universe_ew
+    kind: str = "trend"                 # trend | trend_equal | inverse | btc_200 | btc_eth_200 | btc_hold | universe_ew | alt:<AİLE>
     overrides: tuple = ()               # ((anahtar yolu, değer), ...) — hashlenebilir olsun diye düz liste
     universe: str = "main"
     panel: str = "real"                 # real | h04 … h20 (T8) | kontrol paneli adı
@@ -48,6 +48,7 @@ class RunSpec:
     weight: float = 1.0                 # btc_hold ağırlığı
     hard_stop: bool | None = None       # None: strateji (T0 ve kontrolleri) açık, kıyaslar kapalı (PREREGISTRATION §10)
     note: str = ""
+    params: tuple = ()                  # araştırma v2 (`alt:<AİLE>`): ((parametre, değer), ...)
 
     def override_dict(self) -> dict:
         out: dict = {}
@@ -89,6 +90,9 @@ class PanelSet:
 
 
 def make_strategy(spec: RunSpec, close: pd.DataFrame, universe, cfg: dict):
+    if spec.kind.startswith("alt:"):
+        from trend.alt.registry import make_alt  # araştırma v2 (PREREGISTRATION_v2); leak_days < 0 → gecikme
+        return make_alt(spec.kind[4:], dict(spec.params), lag=-spec.leak_days)
     if spec.kind == "trend":
         return TrendStrategy(leak_days=spec.leak_days)
     if spec.kind == "inverse":

@@ -206,6 +206,8 @@ def _spec(run) -> RunSpec:
     s = dict(run.spec["spec"])
     s["overrides"] = tuple((k, tuple(v) if isinstance(v, list) else v) for k, v in s["overrides"])
     s["exchange_loss"] = tuple(tuple(x) for x in s["exchange_loss"])
+    if "params" in s:
+        s["params"] = tuple(tuple(x) for x in s["params"])
     return RunSpec(**s)
 
 
