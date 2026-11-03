@@ -1,0 +1,52 @@
+{
+ "lock_date": "2026-11-01",
+ "code_commit": "8ca4a5516aa674f9eadfd2c811d18440b9fb5755",
+ "created_utc": "2026-11-03 15:02:39",
+ "data_manifest_sha256": "b3135253bb73be25ef257b033c8b023066e735fd00dbab70827a9317d6e77193",
+ "rtol": 1e-09,
+ "atol": 1e-12,
+ "cache_max_abs_diff": {
+  "T0": 0.0,
+  "B_btc200": 0.0
+ },
+ "files": {
+  "T0_decisions.csv.gz": {
+   "sha256_csv": "1ec28c0e8ab9bab09760b7603d3c2659faa356e377a6b947bb63e37b386c0d34",
+   "rows": 52102
+  },
+  "T0_fills.csv.gz": {
+   "sha256_csv": "5706360898b4b0e438af16585d21817819d9321b2447b3aa7b4ff96d2ee73b25",
+   "rows": 2400
+  },
+  "T0_daily.csv.gz": {
+   "sha256_csv": "68e98d9018c241d925dba89aad64e30dd4c8b66fe1d4be70b9d06c024cb7b446",
+   "rows": 2681
+  },
+  "B_btc200_decisions.csv.gz": {
+   "sha256_csv": "3269c4912cc2a535c42e002a63c8331259c8caa413e78d96e0120a3aaa1747ac",
+   "rows": 49999
+  },
+  "B_btc200_fills.csv.gz": {
+   "sha256_csv": "7eb746b1b0bd304d195535a10a045f187da6f0d06f3269aacfb1f5c67abc7e06",
+   "rows": 63
+  },
+  "B_btc200_daily.csv.gz": {
+   "sha256_csv": "b19d5c7aa6e3ab49d84d340a5002145cc67c455eccba8c35f78462f8632a020e",
+   "rows": 2681
+  }
+ },
+ "check": {
+  "at_utc": "2026-11-03 15:02:48",
+  "code_commit": "8ca4a5516aa674f9eadfd2c811d18440b9fb5755",
+  "byte_identical": {
+   "T0_decisions.csv.gz": true,
+   "T0_fills.csv.gz": true,
+   "T0_daily.csv.gz": true,
+   "B_btc200_decisions.csv.gz": true,
+   "B_btc200_fills.csv.gz": true,
+   "B_btc200_daily.csv.gz": true
+  },
+  "ok": true,
+  "bad": {}
+ }
+}
