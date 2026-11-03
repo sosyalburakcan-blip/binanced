@@ -45,7 +45,8 @@ GRID_BASE = {"target_vol": float(_S["strategy"]["target_vol"]), "span_scale": 1.
              "drift_rel": float(_S["strategy"]["rebalance"]["drift_rel"]),
              "buffer_h": float(_S["strategy"]["buffer_h"])}
 KEY_METRICS = ["annual_return", "annual_vol", "vol_minus_target", "avg_gross_exposure", "avg_cash_share", "sharpe",
-               "sortino", "calmar", "max_drawdown", "max_drawdown_days", "time_under_water_frac", "skewness",
+               "sortino", "calmar", "max_drawdown", "mdd_peak", "mdd_trough", "mdd_duration_days",
+               "longest_underwater_days", "time_under_water_frac", "skewness",
                "turnover_annual", "cost_annual", "n_cycles", "win_rate", "avg_win", "avg_loss",
                "top10pct_profit_share", "n_profitable_coins", "n_coins_traded", "worst_1d_at_max_exposure",
                "worst_3d_at_max_exposure"]
@@ -124,9 +125,16 @@ def control_specs(n_seeds: int = N_CONTROL_SEEDS) -> list[RunSpec]:
     return out
 
 
+def diagnostic_specs(n_seeds: int = N_CONTROL_SEEDS) -> list[RunSpec]:
+    """Ön kayıt dışı tanılar (experiments.md'ye yazılır, N'ye eklenir; seçim için kullanılmaz)."""
+    o = (("backtest.fill", "open_t1"),)
+    return ([RunSpec("D_T0_nostop", hard_stop=False, note="sert sınır kapalı (tanı)")]
+            + [RunSpec(f"D_shuffledm{k}", panel=f"shuffledm{k}", overrides=o) for k in range(n_seeds)])
+
+
 def all_specs(cfg: dict, n_seeds: int = N_CONTROL_SEEDS) -> list[RunSpec]:
     return ([RunSpec("T0", note="temel ayar")] + benchmark_specs() + grid_specs(cfg) + variant_specs()
-            + sensitivity_specs() + control_specs(n_seeds))
+            + sensitivity_specs() + control_specs(n_seeds) + diagnostic_specs(n_seeds))
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -163,7 +171,10 @@ def build_panels(inp: ResearchInputs, specs: list[RunSpec], verbose: bool = True
     close = inp.panel_1d["close"]
     fits = None
     for p in need:
-        if p.startswith("shuffle"):
+        if p.startswith("shuffledm"):
+            rng = np.random.default_rng(CONTROL_SEED + 400 + int(p[9:]))
+            pan = C.shuffled_panel(close, rng, demean=True)
+        elif p.startswith("shuffle"):
             rng = np.random.default_rng(CONTROL_SEED + 100 + int(p[7:]))
             pan = C.shuffled_panel(close, rng)
         elif p.startswith("garch"):
@@ -409,6 +420,24 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
                            for L in cfg["backtest"]["stress"]["exchange_losses"]}
     out["t6_breakeven"]["log_excess"] = {"t0": g0, "btc200": gb}
 
+    # --- ön kayıt dışı tanılar ---
+    stops = {}
+    for s in all_specs(cfg, n_seeds) + phase2_specs(inp):
+        d = load_run(inp, s.name).daily.loc[dev[0]: dev[1]]
+        hs = d["hard_stop"]
+        stops[s.name] = {"stop_days": int(hs.sum()), "first_stop": hs[hs > 0].index.min(),
+                         "stopped_at_end": bool(hs.iloc[-1] > 0), "max_drawdown": float(d["drawdown"].min())}
+    out["stops"] = pd.DataFrame(stops).T
+    out["nostop"] = pd.DataFrame({p: {n: sr(inp, n, periods[p]) for n in ("T0", "D_T0_nostop")} for p in periods})
+    out["nostop_metrics"] = metrics_table(inp, ["T0", "D_T0_nostop"], dev, ["annual_return", "sharpe", "max_drawdown",
+                                                                           "avg_gross_exposure"])
+    dm = [sr(inp, f"D_shuffledm{k}", dev) for k in range(n_seeds)]
+    dma = [compute_metrics(load_run(inp, f"D_shuffledm{k}").daily, None, inp.rf, None, dev[0], dev[1])["scalars"]
+           for k in range(n_seeds)]
+    out["shuffle_dm"] = {"sharpe_mean": float(np.mean(dm)), "sharpe_min": float(min(dm)), "sharpe_max": float(max(dm)),
+                         "ann_mean": float(np.mean([x["annual_return"] for x in dma])),
+                         "cost_mean": float(np.mean([x["cost_annual"] for x in dma]))}
+
     # --- yatırımcı çıtası ---
     tb = inp.tbill_pct.loc[dev[0]: dev[1]]
     out["tbill_mean"] = float(tb.mean() / 100.0)
@@ -459,9 +488,10 @@ def write_reports(inp: ResearchInputs, res: dict, timing: dict | None = None) ->
     for p, df in res["core"].items():
         L += [f"### {p}", "", to_markdown(df, 3, pct), ""]
     t0 = res["t0_full"]["tables"]
-    L += ["## T0 yıl yıl getiri ve maliyet", "", to_markdown(t0["yearly"].T, 3, set(t0["yearly"].columns)), ""]
+    ypct = {"return", "turnover", "cost"}
+    L += ["## T0 yıl yıl getiri ve maliyet", "", to_markdown(t0["yearly"].T, 3, ypct), ""]
     b2 = res["b200_full"]["tables"]
-    L += ["BTC-200:", "", to_markdown(b2["yearly"].T, 3, set(b2["yearly"].columns)), ""]
+    L += ["BTC-200:", "", to_markdown(b2["yearly"].T, 3, ypct), ""]
     if t0.get("holding_times") is not None:
         L += ["## T0 tutma süreleri (gün)", "", to_markdown(t0["holding_times"], 1, set()), ""]
     w = t0["worst_losses"]
@@ -496,6 +526,24 @@ def write_reports(inp: ResearchInputs, res: dict, timing: dict | None = None) ->
           "| Kontrol | Beklenen | Sonuç | Beklendiği gibi |", "| --- | --- | --- | --- |"]
     for name, exp, txt, ok in res["controls"]:
         L.append(f"| {name} | {exp} | {txt} | {_ok(ok)} |")
+    L += ["", "GARCH kontrolünün ilk kurulumunda simüle edilen log getirinin ortalaması sıfırdı; bu, coin başına σ²/2 "
+          "kadar pozitif aritmetik kayma (günlük %5 oynaklıkta yılda yaklaşık %50) taşıyordu ve kontrolü geçersiz "
+          "kılıyordu. Tablodaki satır düzeltilmiş kurulumdur (basit getirinin beklentisi sıfır); ilk sonuç ve düzeltme "
+          "experiments.md'de."]
+    sd = res["shuffle_dm"]
+    L += ["", "## Ön kayıt dışı tanılar (seçim için kullanılmaz; experiments.md'ye yazıldı, N'ye eklendi)", "",
+          "**Ortalamadan arındırılmış karıştırma** (her coinin basit getirisi kendi ortalamasından arındırılıp aynı "
+          f"şekilde karıştırıldı, {len(res['controls']) and N_CONTROL_SEEDS} tohum): Sharpe ort. {sd['sharpe_mean']:.2f} "
+          f"(aralık {sd['sharpe_min']:.2f}…{sd['sharpe_max']:.2f}), yıllık getiri ort. {sd['ann_mean'] * 100:.1f}%, "
+          f"yıllık maliyet ort. {sd['cost_mean'] * 100:.1f}%. SPEC'in karıştırma kontrolü coinlerin dönem boyunca "
+          "toplam kaymasını korur; uzun pozisyonlu bir sistem bu kaymadan zamanlama becerisi olmadan da kazanır. "
+          "Kayma kaldırılınca kalan sonuç zamanlama ve geleceği görme için temiz bir sıfırdır.", "",
+          "**−%35 sert sınır ve nakitte kilitlenme.** Sert sınır yeni alımları durdurur ve portföy zirvenin −%25'ine "
+          "dönünce kalkar. Pozisyonlar sinyalle kapandıktan sonra nakit %0 getirdiği için portföy toparlanamaz ve "
+          "durdurma dönem sonuna kadar sürer. Çalıştırmaların durdurma geçmişi:", "",
+          to_markdown(res["stops"][res["stops"]["stop_days"] > 0], 3, {"max_drawdown"}), "",
+          "T0 ile aynı ayar, sert sınır kapalı (tanı):", "", to_markdown(res["nostop_metrics"], 3, pct), "",
+          "Döneme göre Sharpe:", "", to_markdown(res["nostop"], 2, set()), ""]
     if timing:
         L += ["", f"Toplam backtest süresi: {sum(timing.values()) / 60:.0f} dk işçi süresi, {len(timing)} çalıştırma."]
     g10 = rep / "G10_development.md"

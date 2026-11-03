@@ -12,7 +12,11 @@ Varsayımlar (SPEC'in açık bıraktığı yerler):
   aynı permütasyonla karıştırılır; coinin orijinalde verisi olan ama karışık satırda verisi olmayan günlerde getiri 0
   alınır. Fiyat her coinin ilk geçerli kapanışından yeniden kurulur; veri olmayan günler NaN kalır.
 - GARCH kontrolü: her coine sıfır ortalamalı GARCH(1,1) yarı-ML ile uydurulur, standartlaştırılmış artıklar iid
-  yeniden örneklenerek aynı uzunlukta seri üretilir (oynaklık eşleşir, trend yoktur; coinler arası bağımlılık yoktur).
+  yeniden örneklenerek aynı uzunlukta seri üretilir (oynaklık eşleşir; coinler arası bağımlılık yoktur). Simüle edilen
+  **basit** getirinin beklentisi sıfırdır (r = √h·z, −%90'da kırpılır; log getiri = log(1 + r)); sıfır ortalamalı log
+  getiri σ²/2 kadar pozitif aritmetik kayma taşır ve kontrolü geçersiz kılar (ilk çalıştırmadaki hata, experiments.md).
+- Ortalamadan arındırılmış karıştırma (ön kayıt dışı tanı): her coinin basit getirisinden kendi ortalaması çıkarılır,
+  sonra satırlar karıştırılır; uzun pozisyonun piyasa kaymasından kazancı ortadan kalkar.
 - Kontrol panellerinde açılış = önceki kapanış ve dolum `open_t1`'dir; kıyas gerçek veride aynı dolumla (T3) yapılır.
 """
 
@@ -88,13 +92,18 @@ def _rebuild(close: pd.DataFrame, lr: np.ndarray) -> dict[str, pd.DataFrame]:
     return {"close": cl, "open": op}
 
 
-def shuffled_panel(close: pd.DataFrame, rng: np.random.Generator) -> dict[str, pd.DataFrame]:
-    """Negatif kontrol: günlük log getiri satırları (tüm coinler birlikte) karıştırılıp fiyat yeniden kurulur."""
+def shuffled_panel(close: pd.DataFrame, rng: np.random.Generator, demean: bool = False) -> dict[str, pd.DataFrame]:
+    """Negatif kontrol: günlük log getiri satırları (tüm coinler birlikte) karıştırılıp fiyat yeniden kurulur.
+    `demean`: önce her coinin basit getirisi kendi ortalamasından arındırılır (tanı)."""
     c = close.to_numpy(dtype=float)
     lr = np.full(c.shape, np.nan)
     prev = pd.DataFrame(c).ffill().shift(1).to_numpy()
     with np.errstate(invalid="ignore", divide="ignore"):
         lr[1:] = np.log(c[1:] / prev[1:])
+    if demean:
+        r = np.expm1(lr)
+        r = r - np.nanmean(r, axis=0, keepdims=True)
+        lr = np.log1p(np.maximum(r, -0.9))
     perm = 1 + rng.permutation(c.shape[0] - 1)
     lr_p = lr.copy()
     lr_p[1:] = lr[perm]
@@ -152,7 +161,7 @@ def garch_panel(close: pd.DataFrame, rng: np.random.Generator, fits: dict | None
                 h = omega + alpha * prev_x**2 + beta * h
             prev_x = np.sqrt(h) * e[t]
             x[t] = prev_x
-        out[np.flatnonzero(ok), j] = x
+        out[np.flatnonzero(ok), j] = np.log1p(np.maximum(x, -0.9))  # x basit getiri: beklentisi 0
     return _rebuild(close, out)
 
 

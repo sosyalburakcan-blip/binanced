@@ -32,6 +32,7 @@ from trend.strategy.system import TrendStrategy
 
 BENCHMARK_KINDS = ("btc_200", "btc_eth_200", "btc_hold", "universe_ew")
 TREND_KINDS = ("trend", "trend_equal", "inverse")
+STOP_KINDS = ("trend", "inverse")  # kıyas 6 (trend_equal) bir kıyastır: sert sınır yok
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,7 @@ class RunSpec:
     exchange_loss: tuple = ()           # ((tarih, oran), ...)
     sizing: str = "compound"
     weight: float = 1.0                 # btc_hold ağırlığı
+    hard_stop: bool | None = None       # None: strateji (T0 ve kontrolleri) açık, kıyaslar kapalı (PREREGISTRATION §10)
     note: str = ""
 
     def override_dict(self) -> dict:
@@ -116,7 +118,8 @@ def run_one(spec: RunSpec, inp: ResearchInputs, panels: dict[str, PanelSet]) -> 
     return run_backtest(
         ps.panel_1d, universe=uni, strategy=strat, fill_px=ps.fill_px[mode], delist=ps.delist, cash_rate=cash,
         quality_flags=inp.flags, settings=cfg, start=inp.start, end=inp.end, sizing=spec.sizing,
-        hard_stop=spec.kind in TREND_KINDS, exchange_loss=list(spec.exchange_loss) or None,
+        hard_stop=(spec.kind in STOP_KINDS) if spec.hard_stop is None else spec.hard_stop,
+        exchange_loss=list(spec.exchange_loss) or None,
     )
 
 
