@@ -1,7 +1,8 @@
 """Araştırma v2 aile kayıt defteri ve ayarları (`research_v2.yaml`).
 
-`make_alt(aile, parametreler, lag)` runner'ın `alt:<AİLE>` çalıştırma türü için karar vericiyi kurar. `HOLD` ailesi
-kıyas içindir: sabit karışım (ör. %50 BTC + %50 ETH), aylık dengelenir.
+`make_alt(aile, parametreler, lag)` runner'ın `alt:<AİLE>` çalıştırma türü için karar vericiyi kurar; ailenin `common`
+ayarları aileyi tanımlayan ayar dosyasından okunur (research_v2.yaml, research_v3.yaml). `HOLD` ailesi kıyas içindir:
+sabit karışım (ör. %50 BTC + %50 ETH), aylık dengelenir.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from trend.alt.base import AltStrategy
 from trend.config import ROOT
 
 V2_FILE = ROOT / "research_v2.yaml"
+CONFIG_FILES = (V2_FILE, ROOT / "research_v3.yaml")
 
 
 def load_v2(path=None) -> dict:
@@ -38,10 +40,20 @@ class HoldMix(AltStrategy):
 
 
 def families() -> dict:
-    from trend.alt import single, xsec
-    return {**xsec.FAMILIES, **single.FAMILIES, "HOLD": HoldMix}
+    from trend.alt import single, tsmom, xsec
+    return {**xsec.FAMILIES, **single.FAMILIES, **tsmom.FAMILIES, "HOLD": HoldMix}
+
+
+def common_for(family: str) -> dict:
+    """Aileyi tanımlayan ilk ayar dosyasının `common` bölümü (yoksa research_v2.yaml)."""
+    for p in CONFIG_FILES:
+        if p.exists():
+            c = load_v2(p)
+            if family in c.get("families", {}):
+                return c["common"]
+    return load_v2()["common"]
 
 
 def make_alt(family: str, params: dict, lag: int = 0, v2: dict | None = None) -> AltStrategy:
     cls = families()[family]
-    return cls(dict(params), (v2 or load_v2())["common"], lag)
+    return cls(dict(params), v2["common"] if v2 else common_for(family), lag)

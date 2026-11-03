@@ -1,10 +1,12 @@
-"""Araştırma v2: trend takibi dışındaki aday aileler — toplu çalıştırma ve değerlendirme (PREREGISTRATION_v2).
+"""Araştırma v2/v3: aday aileler — toplu çalıştırma ve değerlendirme (PREREGISTRATION_v2, PREREGISTRATION_v3).
 
-    python -m trend.alt.study run       # ön kayıtlı küme, BİR KEZ (kayıt lock/V2_run.json)
-    python -m trend.alt.study report    # reports/V2_alternatives.md (önbellekten)
+    python -m trend.alt.study run [--config research_v3.yaml]     # ön kayıtlı küme, BİR KEZ (lock/{TAG}_run.json)
+    python -m trend.alt.study report [--config research_v3.yaml]  # rapor (önbellekten)
 
-Çalıştırmalar `backtests/v2/full/` altında; veri G12 anlık görüntüsü (kilit tarihi research_v2.yaml'da). `run`
-yalnızca temiz çalışma ağacında, anlık görüntü kilitle tutarken ve bir kez çalışır (G12 ile aynı kural).
+Ayar dosyası varsayılanı research_v2.yaml. Çalıştırmalar `backtests/{tag}/full/` altında; veri G12 anlık görüntüsü
+(kilit tarihi ayar dosyasında). `run` yalnızca temiz çalışma ağacında, anlık görüntü kilitle tutarken ve bir kez
+çalışır (G12 ile aynı kural). Ayar dosyasındaki `tag`, `title`, `prereg`, `report` anahtarları yoksa v2 değerleri;
+ailede `leak_days` yoksa pozitif kontrol 1 gün sızıntıdır.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ import time
 import numpy as np
 import pandas as pd
 
-from trend.alt.registry import load_v2
+from trend.alt.registry import families, load_v2
 from trend.config import load_settings, path as cfg_path
 from trend.evaluation import bootstrap as bs
 from trend.evaluation.dsr import deflated_sharpe_ratio, n_trials_for_dsr
@@ -33,7 +35,8 @@ from trend.research.runner import RunSpec, load_run, run_many
 
 _S = load_settings()
 V2 = load_v2()
-XS = ("XS_REV", "XS_LOWVOL")
+DEFAULTS = {"tag": "v2", "title": "Araştırma v2 — trend takibi dışındaki stratejiler",
+            "prereg": "PREREGISTRATION_v2.md", "prereg_tag": "prereg-v2", "report": "V2_alternatives.md"}
 BTC, ETH = _S["universe"]["btc_asset"], _S["universe"]["eth_asset"]
 BENCH = ["B_btc200", "B_btchold", "B_btceth5050", "B_univew", "T0"]
 KEYS = ["annual_return", "annual_vol", "sharpe", "sortino", "max_drawdown", "avg_gross_exposure", "turnover_annual",
@@ -42,9 +45,22 @@ PCT = {"annual_return", "annual_vol", "max_drawdown", "avg_gross_exposure", "tur
        "growth_1000"}
 
 
-def v2_settings(base: dict | None = None) -> dict:
+def meta(v2: dict, key: str) -> str:
+    return str(v2.get(key, DEFAULTS[key]))
+
+
+def v2_settings(base: dict | None = None, tag: str = "v2") -> dict:
     base = base or _S
-    return load_settings({"paths": {"backtests": str(cfg_path(base, "backtests") / "v2")}})
+    return load_settings({"paths": {"backtests": str(cfg_path(base, "backtests") / tag)}})
+
+
+def is_xsec(f: str) -> bool:
+    """Kesitsel aile mi (evren üyeleri arasından seçim)? Sıfır hipotezi türünü belirler."""
+    return bool(getattr(families()[f], "use_universe", False))
+
+
+def leak_days(v2: dict, f: str) -> int:
+    return int(v2["families"][f].get("leak_days", 1))
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -79,7 +95,8 @@ def control_specs(v2: dict = V2) -> list[RunSpec]:
         p, k = tuple(d["base"].items()), f"alt:{f}"
         out += [RunSpec(f"{f}_cost2", kind=k, params=p, overrides=(("backtest.cost_multiplier", cm),)),
                 RunSpec(f"{f}_lag365", kind=k, params=p, leak_days=-365),
-                RunSpec(f"{f}_leak1", kind=k, params=p, leak_days=1, note="pozitif kontrol")]
+                RunSpec(f"{f}_leak{leak_days(v2, f)}", kind=k, params=p, leak_days=leak_days(v2, f),
+                        note="pozitif kontrol")]
         out += [RunSpec(f"{f}_shdm{s}", kind=k, params=p, panel=f"shuffledm{s}", overrides=o) for s in range(n)]
         out += [RunSpec(f"{f}_garch{s}", kind=k, params=p, panel=f"garch{s}", overrides=o) for s in range(n)]
     return out
@@ -99,25 +116,26 @@ def all_specs(v2: dict = V2) -> list[RunSpec]:
 # Tek seferlik toplu çalıştırma
 
 
-def run_batch(workers: int | None = None, allow_rerun: bool = False) -> dict:
+def run_batch(workers: int | None = None, allow_rerun: bool = False, v2: dict = V2) -> dict:
     base = load_settings()
-    rp = g12.lock_dir(base) / "V2_run.json"
+    tag = meta(v2, "tag")
+    rp = g12.lock_dir(base) / f"{tag.upper()}_run.json"
     if rp.exists() and not allow_rerun:
-        raise SystemExit(f"v2 toplu çalıştırması zaten yapıldı ({rp}); raporu `report` ile üretin.")
+        raise SystemExit(f"{tag} toplu çalıştırması zaten yapıldı ({rp}); raporu `report` ile üretin.")
     dirty = g12.git("status", "--porcelain", "--untracked-files=no")
     if dirty:
         raise SystemExit("çalışma ağacında işlenmemiş değişiklik var; ön kayıt commit'i temiz olmalı:\n" + dirty)
     v = g12.verify_snapshot(base)
     if not v["ok"]:
         raise SystemExit(f"anlık görüntü kilitle tutmuyor ({v['n_changed']} dosya): {v['changed']}")
-    cfg = v2_settings(base)
-    specs = all_specs()
-    rec = {"started_utc": g12._now(), "code_commit": g12.git("rev-parse", "HEAD"), "lock_date": V2["lock_date"],
+    cfg = v2_settings(base, tag)
+    specs = all_specs(v2)
+    rec = {"started_utc": g12._now(), "code_commit": g12.git("rev-parse", "HEAD"), "lock_date": v2["lock_date"],
            "data_manifest_sha256": g12.read_lock(base)["data_manifest_sha256"], "n_specs": len(specs),
            "specs": [s.name for s in specs]}
     g12._write_json(rp, rec)          # çalıştırmadan ÖNCE
     t0 = time.perf_counter()
-    inp = load_inputs("full", V2["lock_date"], cfg=cfg, fill_modes=("vwap_00_02", "open_t1"))
+    inp = load_inputs("full", v2["lock_date"], cfg=cfg, fill_modes=("vwap_00_02", "open_t1"))
     panels = g10.build_panels(inp, specs)
     timing = run_many(specs, inp, panels, workers, reuse=False)
     rec.update(finished_utc=g12._now(), n_runs=len(timing), worker_seconds=round(sum(timing.values()), 1),
@@ -161,7 +179,7 @@ def null_tests(inp, f: str, per: tuple, cfg: dict) -> dict:
     def stat(w):
         return C.simple_stats(w, rets, cost, inp.rf)
 
-    if f in XS:
+    if is_xsec(f):
         mem = C.membership(inp.universes["main"], w_end.index, list(close.columns))
         avail = rets.notna() | close.reindex(w_end.index).notna()
         od = pd.to_datetime(run.cycles["open_date"])
@@ -193,8 +211,9 @@ def controls(inp, f: str, per: tuple, v2: dict = V2) -> list[tuple]:
     s_lag = sr(inp, f"{f}_lag365", per)
     out.append(("Sinyal 365 gün gecikmeli", f"Sharpe ≤ temelin %{ev['lag_max_ratio'] * 100:.0f}'i",
                 f"{s_lag:.2f} (temel {s0:.2f})", (s_lag <= ev["lag_max_ratio"] * s0) if s0 > 0 else None))
-    s_leak = sr(inp, f"{f}_leak1", per)
-    out.append(("Pozitif kontrol: 1 gün sızıntı", f"Sharpe ≥ temel + {ev['leak_min_gain']:g}",
+    lk = leak_days(v2, f)
+    s_leak = sr(inp, f"{f}_leak{lk}", per)
+    out.append((f"Pozitif kontrol: {lk} gün sızıntı", f"Sharpe ≥ temel + {ev['leak_min_gain']:g}",
                 f"{s_leak:.2f} (temel {s0:.2f})", bool(s_leak >= s0 + ev["leak_min_gain"])))
     for pre, label in (("shdm", "Ortalamadan arındırılmış karıştırma"), ("garch", "GARCH serileri")):
         s = [sr(inp, f"{f}_{pre}{k}", per) for k in range(n)]
@@ -222,12 +241,14 @@ def analyze(inp, v2: dict = V2, verbose: bool = True) -> dict:
     out["yearly"] = pd.DataFrame({n: yearly(inp, n, F) for n in names}).T
     cand_sr = np.array([sr(inp, n, F) for n in cands])
     n_exp = n_experiments(cfg)
-    n_trials = n_trials_for_dsr(n_exp, int(ev["dsr_trials_v1"]), len(cands), cfg)
-    out["dsr_n"] = {"n_experiments": n_exp, "v1": int(ev["dsr_trials_v1"]), "v2": len(cands), "N": n_trials}
-    alpha = float(ev["alpha"]) / int(ev["n_families"])
+    prior = int(ev.get("dsr_trials_prior", ev.get("dsr_trials_v1", 0)))
+    n_trials = n_trials_for_dsr(n_exp, prior, len(cands), cfg)
+    out["dsr_n"] = {"n_experiments": n_exp, "prior": prior, "this": len(cands), "N": n_trials,
+                    "alpha": alpha_fam(v2)}
+    alpha = alpha_fam(v2)
     rb = period_ret(inp, "B_btc200", F)
     for f in fams:
-        log(f"[v2] {f}")
+        log(f"[{meta(v2, 'tag')}] {f}")
         r = {}
         rf_ = period_ret(inp, f, F)
         r["primary"] = bs.paired_sharpe_test(rf_, rb, inp.rf, alpha=alpha, cfg=cfg)
@@ -246,6 +267,11 @@ def analyze(inp, v2: dict = V2, verbose: bool = True) -> dict:
     return out
 
 
+def alpha_fam(v2: dict) -> float:
+    ev = v2["evaluation"]
+    return float(ev["alpha"]) / int(ev["n_families"])
+
+
 def criteria(f: str, r: dict, v2: dict = V2) -> list[tuple]:
     ev = v2["evaluation"]
     p, d, s = r["primary"], r["dsr"], r["sr"]
@@ -256,7 +282,7 @@ def criteria(f: str, r: dict, v2: dict = V2) -> list[tuple]:
     ctl = [c[3] for c in r["controls"]]
     k7 = bool(nb) and all(v > 0 and v >= ev["neighbor_min_ratio"] * base for v in nb.values())
     return [
-        (1, f"BTC-200'ü yener (p < {float(ev['alpha']) / int(ev['n_families']):.3f})",
+        (1, f"BTC-200'ü yener (p < {alpha_fam(v2):.4f})",
          f"ΔSharpe {p['sharpe_diff']:.2f}, p = {p['p_value']:.4f}", bool(p["passed"])),
         (2, "DSR ≥ 0,95", f"{d['dsr']:.3f}", bool(d["dsr"] >= 0.95)),
         (3, "Tasarım ve bekletmede Sharpe > 0 (1× ve 2× maliyet)",
@@ -285,20 +311,21 @@ def decision(r: dict) -> str:
 # Rapor
 
 
-def write_report(inp, res: dict, run_rec: dict | None) -> object:
+def write_report(inp, res: dict, run_rec: dict | None, v2: dict = V2) -> object:
     P = res["periods"]
     F = P["full"]
     fams = list(res["families"])
-    L = ["# Araştırma v2 — trend takibi dışındaki stratejiler", "",
+    tag = meta(v2, "tag")
+    L = [f"# {meta(v2, 'title')}", "",
          f"Tam dönem {F[0].date()} – {F[1].date()}; tasarım {P['design'][0].date()} – {P['design'][1].date()}; "
-         f"kirlenmiş bekletme {P['holdout'][0].date()} – {P['holdout'][1].date()}. Ön kayıt `PREREGISTRATION_v2.md` "
-         "(tag `prereg-v2`). Maliyetler, dolum ve evren v1 ile aynı; nakit %0; sert sınır yok.", "",
+         f"kirlenmiş bekletme {P['holdout'][0].date()} – {P['holdout'][1].date()}. Ön kayıt `{meta(v2, 'prereg')}` "
+         f"(tag `{meta(v2, 'prereg_tag')}`). Maliyetler, dolum ve evren v1 ile aynı; nakit %0; sert sınır yok.", "",
          "> Bu veride gerçek örneklem dışı dönem yok (2024 sonrası G12'de görüldü). Geçen bir aile bile ancak gölge "
          "mod adayıdır.", ""]
     if run_rec:
         L += [f"Toplu çalıştırma: {run_rec.get('started_utc')} → {run_rec.get('finished_utc', 'yarıda')} UTC, "
               f"{run_rec.get('n_runs', '—')} çalıştırma, commit `{str(run_rec.get('code_commit'))[:7]}` "
-              "(`lock/V2_run.json`).", ""]
+              f"(`lock/{tag.upper()}_run.json`).", ""]
     L += ["## Sonuç", "", "| Aile | Yıllık getiri | Sharpe | En büyük düşüş | 1.000 $ → | Kriter | Karar |",
           "| --- | --- | --- | --- | --- | --- | --- |"]
     m = res["metrics"]["full"]
@@ -309,8 +336,8 @@ def write_report(inp, res: dict, run_rec: dict | None) -> object:
                  f"{m.loc['max_drawdown', n] * 100:.1f}% | {m.loc['growth_1000', n] * 1000:,.0f} | {crit} | "
                  f"{decision(r) if r else '—'} |")
     d = res["dsr_n"]
-    L += ["", f"DSR için N = max(100, deneme {d['n_experiments']} + v1 {d['v1']} + v2 {d['v2']}) = {d['N']}. Birincil "
-          "test Bonferroni ile p < 0,01.", ""]
+    L += ["", f"DSR için N = max(100, deneme {d['n_experiments']} + önceki araştırmalar {d['prior']} + bu araştırma "
+          f"{d['this']}) = {d['N']}. Birincil test Bonferroni ile p < {d['alpha']:.4f}.", ""]
     for p in P:
         L += [f"## Metrikler: {p}", "", to_markdown(res["metrics"][p], 3, PCT), ""]
     L += ["## Yıl yıl getiri", "", to_markdown(res["yearly"], 3, set(res["yearly"].index)), ""]
@@ -330,13 +357,13 @@ def write_report(inp, res: dict, run_rec: dict | None) -> object:
         L += ["", f"Sıfır hipotezleri (tasarım, basit hesap Sharpe {nl['obs_sharpe']:.2f}): "
               + "; ".join(f"{k}: p = {v['p']:.3f}, sıfır ort. {v['null_mean']:.2f}, %95 {v['null_q95']:.2f}"
                           for k, v in nl.items() if isinstance(v, dict)) + ".", ""]
-    out = cfg_path(inp.cfg, "reports") / "V2_alternatives.md"
+    out = cfg_path(inp.cfg, "reports") / meta(v2, "report")
     out.write_text("\n".join(L) + "\n", encoding="utf-8", newline="\n")
     summ = {f: {"decision": decision(r), "criteria": {str(c[0]): c[3] for c in r["criteria"]},
                 "sharpe_full": float(res["metrics"]["full"].loc["sharpe", f]),
                 "annual_return_full": float(res["metrics"]["full"].loc["annual_return", f])}
             for f, r in res["families"].items()}
-    g12._write_json(cfg_path(inp.cfg, "backtests") / inp.stage / "summary_v2.json", summ)
+    g12._write_json(cfg_path(inp.cfg, "backtests") / inp.stage / f"summary_{tag}.json", summ)
     return out
 
 
@@ -344,16 +371,19 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m trend.alt.study")
     ap.add_argument("cmd", choices=["run", "report"])
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--config", default=None, help="ayar dosyası (varsayılan research_v2.yaml)")
     a = ap.parse_args(argv)
     t0 = time.perf_counter()
+    v2 = load_v2(a.config) if a.config else V2
     if a.cmd == "run":
-        print(json.dumps({k: v for k, v in run_batch(a.workers).items() if k != "specs"}, indent=1))
+        print(json.dumps({k: v for k, v in run_batch(a.workers, v2=v2).items() if k != "specs"}, indent=1))
     else:
         base = load_settings()
-        rp = g12.lock_dir(base) / "V2_run.json"
+        tag = meta(v2, "tag")
+        rp = g12.lock_dir(base) / f"{tag.upper()}_run.json"
         rec = json.loads(rp.read_text(encoding="utf-8")) if rp.exists() else None
-        inp = load_inputs("full", V2["lock_date"], cfg=v2_settings(base), fill_modes=("open_t1",))
-        print("rapor →", write_report(inp, analyze(inp), rec))
+        inp = load_inputs("full", v2["lock_date"], cfg=v2_settings(base, tag), fill_modes=("open_t1",))
+        print("rapor →", write_report(inp, analyze(inp, v2), rec, v2))
     print(f"bitti: {time.perf_counter() - t0:.0f}s")
     return 0
 
