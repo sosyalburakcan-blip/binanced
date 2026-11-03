@@ -5,16 +5,16 @@
 > Bundan sonra bu dosyada, `settings.yaml`'da veya `meta/symbol_map.csv`'de yapılan her değişiklik
 > `experiments.md`'ye bir deneme olarak yazılır ve N'ye eklenir.
 
-## Dondurma kaydı (G9'da doldurulur)
+## Dondurma kaydı (G9)
 
 | Alan | Değer |
 | --- | --- |
-| Dondurma tarihi (UTC) | _doldurulacak_ |
-| Kod commit'i | _doldurulacak_ |
-| İmzalı git tag'i | _doldurulacak_ (`git tag -s prereg-v1`; bu makinede GPG anahtarı yok, kullanıcı oluşturur) |
-| `settings.yaml` SHA-256 | _doldurulacak_ |
-| `meta/symbol_map.csv` SHA-256 (kullanıcı onaylı) | _doldurulacak_ |
-| Bu dosyanın SHA-256'sı | Dondurmadan sonra hesaplanır ve üçüncü bir yere (ör. kendinize e-posta) zaman damgasıyla gönderilir |
+| Dondurma tarihi (UTC) | 2026-11-03 03:26 |
+| Kod commit'i | `3a130271e901479a24dce094475b50880a03b500` (kod, `settings.yaml` ve meta tablolar bu commit'tedir; tag bu dosyayı ekleyen bir sonraki commit'i işaretler) |
+| Git tag'i | `prereg-v1` (açıklamalı, imzasız: bu makinede GPG anahtarı yok). İmzalı tag'i kullanıcı atar: `git tag -s prereg-v1-signed prereg-v1^{}` |
+| `settings.yaml` SHA-256 | `7233684884b76ea7e668474f164899885175e9f741c065504cd2df9f79771059` |
+| `meta/symbol_map.csv` SHA-256 (kullanıcı onaylı) | `b2524f6190905db1c60eac6e419dc1125155ddbd1884e85b431ce5bbf5677be0` |
+| Bu dosyanın SHA-256'sı | Dosyanın kendisine yazılamaz; `experiments.md`'ye yazılır ve kullanıcı kendine e-postayla gönderir (zaman damgası) |
 
 ## 1. Birincil hipotez (tek)
 
