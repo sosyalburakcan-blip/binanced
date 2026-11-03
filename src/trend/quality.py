@@ -821,7 +821,7 @@ def write_report(cfg: dict | None = None, with_1h: bool = False, out: Path | Non
 
     out = out or cfg_path(cfg, "reports") / "G4_quality.md"
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text("\n".join(L) + "\n", encoding="utf-8")
+    out.write_text("\n".join(L) + "\n", encoding="utf-8", newline="\n")
     print(f"rapor → {out}")
     return out
 

@@ -830,7 +830,7 @@ def write_g5_report(cfg: dict | None = None, path: Path | None = None) -> Path:
             txt = txt.rstrip() + "\n\n" + auto + "\n"
     else:
         txt = "# G5 — Meta tablolar\n\n" + auto + "\n"
-    path.write_text(txt, encoding="utf-8")
+    path.write_text(txt, encoding="utf-8", newline="\n")
     print(f"rapor → {path}")
     return path
 
