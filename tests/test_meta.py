@@ -343,5 +343,5 @@ def test_g5_report_auto_section_preserves_manual_text(tmp_path):
     rp.write_text(f"# başlık\n\nelle not\n\n{M.AUTO_BEGIN}\neski\n{M.AUTO_END}\n\nson not\n", encoding="utf-8")
     M.write_g5_report(CFG, rp)
     t = rp.read_text(encoding="utf-8")
-    assert "elle not" in t and "son not" in t and "ESKI_OTOMATIK_ICERIK" not in t and "Onay bekliyor" in t
+    assert "elle not" in t and "son not" in t and "ESKI_OTOMATIK_ICERIK" not in t and "Onaylandı 2026-11-03" in t
     assert t.count(M.AUTO_BEGIN) == 1 and t.count(M.AUTO_END) == 1

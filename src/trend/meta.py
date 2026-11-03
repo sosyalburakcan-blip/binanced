@@ -767,6 +767,9 @@ def _md(df: pd.DataFrame) -> str:
     return "\n".join(lines) + "\n"
 
 
+SYMBOL_MAP_APPROVED_ROWS = 43
+
+
 def render_auto_section(cfg: dict | None = None) -> str:
     cfg = cfg or load_settings()
     m = cfg_path(cfg, "meta")
@@ -780,7 +783,8 @@ def render_auto_section(cfg: dict | None = None) -> str:
     if sm is not None:
         t = sm.copy()
         t.insert(0, "#", range(1, len(t) + 1))
-        t["onay"] = "Onay bekliyor"
+        # Kullanıcı 43 satırı 2026-11-03'te onayladı (PREREGISTRATION.md); sonraki satırlar yeniden onay bekler
+        t["onay"] = ["Onaylandı 2026-11-03" if i < SYMBOL_MAP_APPROVED_ROWS else "Onay bekliyor" for i in range(len(t))]
         L.append(f"### symbol_map.csv ({len(t)} satır; yes: {int((t['verified'] == 'yes').sum())}, "
                  f"candidate: {int((t['verified'] == 'candidate').sum())})\n")
         L.append(_md(t))

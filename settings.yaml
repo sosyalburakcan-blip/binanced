@@ -154,6 +154,7 @@ backtest:
     delist_penalties: [0.20, 0.50]   # T5
     cost_multiplier: 2.0             # T6
     exchange_losses: [0.20, 0.50]    # T6: borsadaki varlığın tek seferlik kaybı
+    exchange_loss_date: "2022-11-08" # T6: kayıp günü, sonuç görülmeden seçildi (FTX çöküşü; geliştirme döneminin içinde)
   t8_close_hours: [4, 8, 12, 16, 20] # T8: günlük mumun kapanış saatleri (UTC)
 
 evaluation:

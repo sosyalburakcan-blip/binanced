@@ -1,7 +1,7 @@
 """Önceden kaydedilmiş varyantlar T0–T10 (SPEC "Ön kayıt") → ayar geçersiz kılmaları ve motor seçenekleri.
 
 Her alt çalıştırma bir `VariantRun`: `overrides` (run_backtest(overrides=...)) ve özel girdi ihtiyacı `params`:
-- `exchange_loss_frac` (T6): orkestratör bir tarih seçip `exchange_loss=[(tarih, frac)]` geçer;
+- `exchange_loss_frac` (T6): orkestratör `exchange_loss=[(T6_EXCHANGE_LOSS_DATE, frac)]` geçer;
 - `usdt_only` (T7): evren sağlayıcısı `universe/usdt_only/` dizininden kurulur;
 - `close_hour` (T8): `shifted_inputs()` ile kaydırılmış günlük panel + dolum fiyatları, delist tablosu bu panelden.
 Stres ve varyant değerleri settings.yaml'dan (`backtest.stress`, `backtest.t8_close_hours`,
@@ -21,6 +21,7 @@ _S = load_settings()
 T5_DELIST_PENALTIES = tuple(_S["backtest"]["stress"]["delist_penalties"])
 T6_COST_MULTIPLIER = float(_S["backtest"]["stress"]["cost_multiplier"])
 T6_EXCHANGE_LOSSES = tuple(_S["backtest"]["stress"]["exchange_losses"])
+T6_EXCHANGE_LOSS_DATE = pd.Timestamp(_S["backtest"]["stress"]["exchange_loss_date"])
 T8_CLOSE_HOURS = tuple(_S["backtest"]["t8_close_hours"])
 T10_CORE_WEIGHTS = tuple(_S["evaluation"]["core_satellite_core_weights"])
 

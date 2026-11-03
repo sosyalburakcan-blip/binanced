@@ -1,9 +1,9 @@
 # Ön kayıt (PREREGISTRATION.md)
 
-> **Durum: TASLAK — henüz dondurulmadı.** Bu belge SPEC.md v3'ün "Ön kayıt" ve "Değerlendirme" bölümlerinden
-> birebir derlendi. Geliştirme döneminin hiçbir strateji sonucu görülmeden önce (G9, G10'dan önce) aşağıdaki
-> "Dondurma" adımları tamamlanmalıdır. Dondurulduktan sonra bu dosyadaki her değişiklik `experiments.md`'ye bir
-> deneme olarak yazılır ve N'ye eklenir.
+> **Durum: DONDURULDU (2026-11-03).** Bu belge SPEC.md v3'ün "Ön kayıt" ve "Değerlendirme" bölümlerinden
+> birebir derlendi ve geliştirme döneminin hiçbir strateji sonucu görülmeden kullanıcı tarafından onaylandı.
+> Bundan sonra bu dosyada, `settings.yaml`'da veya `meta/symbol_map.csv`'de yapılan her değişiklik
+> `experiments.md`'ye bir deneme olarak yazılır ve N'ye eklenir.
 
 ## Dondurma kaydı (G9'da doldurulur)
 
@@ -118,8 +118,22 @@ değiştirme gerekçesi değildir.
 ## 10. Uygulama varsayımları (kodda da belirtilir)
 
 `CONTRACTS.md` zaman kuralı, evren zamanlaması ve veri biçimleri bu ön kaydın parçasıdır. SPEC'in açık bıraktığı
-yerlerde verilen kararlar aşağıdadır; hepsi kodda da yorum olarak yazılıdır. **Dondurmadan önce kullanıcı
-tarafından gözden geçirilmelidir.**
+yerlerde verilen kararlar aşağıdadır; hepsi kodda da yorum olarak yazılıdır. **Kullanıcı 2026-11-03'te
+onayladı.**
+
+**Kullanıcı onayıyla kesinleşenler**
+
+- `meta/symbol_map.csv` 43 satırıyla olduğu gibi (hepsi `verified=yes`). NPXS→PUNDIX satırındaki son işlem
+  saati tablodaki gibi bırakıldı; kesimden sonra hacmi olan mumlar zaten tutulduğu için sınırı veri belirler.
+- `meta/fee_promotions.csv` yalnızca hem maker hem taker komisyonunun sıfır olduğu kampanyaları içerir;
+  yalnızca maker komisyonunun sıfır olduğu kampanyalar dahil değildir.
+
+**Dondurmadan önce bilinen veri gerçekleri (strateji sonucu değil)**
+
+- Evren 2019–2020'de medyan 10 coin (en az 3), geliştirme döneminin ilk ayı 2019-07'de 9 coin; 2021'den
+  itibaren her ay 20. Parametre değiştirilmedi.
+- T7 evreni ana evrenle her ay aynı (USDT hacmi her gün diğer stablecoin çiftlerinden büyük). T7 yine de
+  çalıştırılır ve raporlanır; bilgi taşımadığı not edilir.
 
 **Veri ve kalite**
 
@@ -155,11 +169,18 @@ tarafından gözden geçirilmelidir.**
 - Delist kapanışı: dolum penceresi VWAP'ı, yoksa günlük VWAP, o da yoksa son kapanış; × (1 − ceza), üstüne komisyon.
 - Dolum yapılamayan emir düşer, ertesi günün kararı yeniden üretir. Orantılı küçültme dolum anındaki fiyatlarla.
 - 10 USDT altı tam çıkış artığı sıfır değerle silinir; çıkış dışı emirlerde 10 USDT filtresi karar anında uygulanır.
-- Kıyaslarda sert sınır yoktur; T10 dilimleri arası aktarım maliyetsiz sayılır; T6 kayıp tarihi G11'de önceden
-  seçilip buraya yazılır.
+- Kıyaslarda sert sınır yoktur; T10 dilimleri arası aktarım maliyetsiz sayılır.
+- T6 borsa kaybı günü **2022-11-08** (FTX çöküşü), sonuç görülmeden seçildi (`backtest.stress.exchange_loss_date`).
+  Kayıp o gün borsadaki tüm varlığa (nakit + coin) uygulanır; −%35 sert sınırı tetiklenirse motor normal kuralla
+  davranır. Doğrulama döneminde bu tarih yoktur; T6 kaybı geliştirme ve tam dönemde raporlanır.
 
 **Değerlendirme**
 
 - Birincil test p = (1 + #{ΔSR* ≤ 0}) / (B + 1) (yüzdelik yöntemi, tek yönlü).
 - Hazine bonosu: günlük oran = y/100/365, 1 gün gecikmeli, yalnızca ileri taşınır, 10 günden bayatsa eksik.
 - Düşüş ufku tablosu: her bootstrap yolunun ilk h günü. PBO: CSCV, S = 16.
+- "Sistemin hâlâ anlamlı kaldığı yıllık beklenen kayıp oranı" (T6): yılda p olasılıkla L kadar (L = %20, %50)
+  kayıp, yıllık log getiriyi beklentide p·(−ln(1 − L)) azaltır. Raporlanan p*, T0'ın maliyetler sonrası yıllık
+  ortalama aşırı log getirisini sıfıra (ve ayrıca BTC-200'ün düzeyine) indiren değerdir.
+- Bağımsız kontrol betiği (SPEC madde 6) G10'dan önce, motor kodunu görmemiş ayrı bir oturumda yalnızca SPEC'ten
+  yazılır ve `independent/` altına konur; G10'da sinyaller ve tek coinlik getiri motorla karşılaştırılır.
