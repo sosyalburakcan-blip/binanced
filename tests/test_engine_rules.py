@@ -77,6 +77,19 @@ def test_delist_with_announcement_sells_next_day_at_normal_cost_and_never_reente
     assert x.date == d[3] and x.price == pytest.approx(50 * 0.999) and x.penalty_cost == 0
 
 
+def test_announced_asset_can_reenter_after_series_resumes_from_long_gap():
+    # FTTUSDT tipi: duyuru → satış; seri delist_stale_days'ten uzun boşluktan dönünce yeniden alınabilir
+    n = 30
+    d = pd.date_range("2024-01-01", periods=n, freq="D")
+    cB = [50.0] * 5 + [np.nan] * 12 + [60.0] * 13
+    dl = pd.DataFrame({"asset": ["BBBUSDT"], "last_day": [NAT], "announced_day": [d[2]]})
+    res, _ = _tw({"AAAUSDT": [100.0] * n, "BBBUSDT": cB}, {"AAAUSDT": [100.0] * n, "BBBUSDT": cB},
+                 {"AAAUSDT": 0.0, "BBBUSDT": 0.5}, delist=dl)
+    f = res.fills
+    assert f["kind"].tolist() == ["entry", "exit", "entry"]
+    assert f.iloc[1].date == d[3] and f.iloc[2].date == d[18]  # dönüş günü (d[17]) kararı, d[18] dolumu
+
+
 def test_delist_info_from_panel_uses_last_candle_and_stale_rule():
     idx = _days(30)
     c = pd.DataFrame({"A": 1.0, "B": [1.0] * 10 + [np.nan] * 20, "C": [1.0] * 25 + [np.nan] * 5}, index=idx)

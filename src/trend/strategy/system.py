@@ -47,7 +47,8 @@ def clean_bar_count(close: pd.DataFrame, flags: pd.DataFrame | None) -> np.ndarr
     days = pd.DatetimeIndex(close.index)
     col = {str(c): j for j, c in enumerate(close.columns)}
     excl = np.full((n_days, n), n_days, dtype=np.int64)  # bar b'nin sayımdan düştüğü ilk karar günü
-    f = flags[flags["severity"].isin(EXCLUDING_SEVERITIES)]
+    # PREREGISTRATION §10: temiz gün = bar var, yarım gün değil, error/exclude işareti yok
+    f = flags[flags["severity"].isin(EXCLUDING_SEVERITIES) | (flags["check"] == "half_day")]
     for sym, ps, pe, kf in zip(f["symbol"].astype(str), f["period_start"], f["period_end"], f["known_from"]):
         j = col.get(sym)
         if j is None:

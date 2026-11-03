@@ -43,7 +43,7 @@ def delist_info_from_panel(
     out["announced_day"] = pd.NaT
     if announcements is not None and len(announcements):
         ann = announcements[announcements["kind"].isin(kinds)].copy()
-        ann["announced_day"] = pd.to_datetime(ann["announced_utc"]).dt.floor("D")
+        ann["announced_day"] = pd.to_datetime(ann["announced_utc"], format="mixed").dt.floor("D")
         first = ann.groupby(ann["symbol"].astype(str))["announced_day"].min()
         out = out.set_index("asset")
         for sym, d in first.items():

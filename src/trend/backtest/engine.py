@@ -194,6 +194,15 @@ def run_backtest(
                     last_idx[j] = p
             if pd.notna(ad):
                 ann_idx[j] = int(days.searchsorted(pd.Timestamp(ad).floor("D"), side="left"))
+    # Duyurudan sonra seri `delist_stale_days`'ten uzun bir boşluktan dönerse (yeniden listeleme, ör. FTTUSDT
+    # 2023-09-22) duyuru dönüş gününe kadar geçerlidir (meta/delist_announcements.csv: "delist kuralı ilk kapanışa
+    # uygulanır"). Dönüş günü veride t'de görüldüğü için nedenseldir.
+    resume_idx = np.full(n, np.iinfo(np.int64).max, dtype=np.int64)
+    for j in np.flatnonzero(ann_idx < len(days)):
+        v = np.flatnonzero(np.isfinite(C[:, j]))
+        k = np.flatnonzero((v[1:] > ann_idx[j]) & (np.diff(v) > int(bt["delist_stale_days"]) + 1))
+        if k.size:
+            resume_idx[j] = int(v[1:][k[0]])
 
     rate = daily_cash_rate(cash_rate, days, bt["cash_yield"], TBILL_HAIRCUT)
     loss = {}
@@ -384,7 +393,7 @@ def run_backtest(
         base = nav if sizing == "compound" else init
         w = mv / base if base > 0 else np.zeros(n)
         frozen = ~okc
-        force_zero = dead | (ann_idx <= i)
+        force_zero = dead | ((ann_idx <= i) & (i < resume_idx))
         mtf = mintrade(base, min_order, mt_mult, mt_min)
         view = DayView(i=i, t=day_ts[i], first=(r == 0), base=base, nav=nav, qty=qty.copy(), w=w, held=held,
                        frozen=frozen, univ=u_mask, cap=last_cap.copy(), force_zero=force_zero,

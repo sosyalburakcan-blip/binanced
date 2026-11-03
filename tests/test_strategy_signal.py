@@ -149,3 +149,15 @@ def test_clean_bar_count_uses_flags_only_from_known_from_plus_one():
     assert ((cnt[:, 0] >= 200).nonzero()[0][:3] == [199, 200, 201]).all()
     assert not (cnt[250:349, 0] >= 200).any() and cnt[349, 0] == 200
     np.testing.assert_array_equal(cnt[:, 1], np.arange(1, 401))  # severity=flag sayımı etkilemez
+
+
+def test_clean_bar_count_excludes_half_days():
+    # PREREGISTRATION §10: yarım gün temiz gün değildir (severity=flag olsa da)
+    from trend.strategy.system import clean_bar_count
+
+    c = _walk(250, 6, cols=1)
+    d = c.index
+    flags = pd.DataFrame({"symbol": ["X0"], "check": ["half_day"], "period_start": [d[0]], "period_end": [d[0]],
+                          "known_from": [d[0]], "severity": ["flag"], "detail": ""})
+    cnt = clean_bar_count(c, flags)
+    assert cnt[199, 0] == 199 and cnt[200, 0] == 200
