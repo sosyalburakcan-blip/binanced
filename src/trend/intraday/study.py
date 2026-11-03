@@ -395,7 +395,8 @@ def analyze(v4: dict | None = None) -> dict:
                                            alpha=float(ev["alpha"]), cfg=_S)
     n_exp = n_experiments(_S)
     n_all = n_trials_for_dsr(n_exp, int(ev["dsr_trials_prior"]), len(names) * len(venues(v4)), _S)
-    out["dsr"] = deflated_sharpe_ratio(rb, n_all, trial_sharpes_annual=sr["full"], rf=rf(), cfg=_S)
+    fin = sr["full"][np.isfinite(sr["full"])]   # hiç işlem yapmayan yapılandırmanın Sharpe'ı tanımsız
+    out["dsr"] = deflated_sharpe_ratio(rb, n_all, trial_sharpes_annual=fin, rf=rf(), cfg=_S)
     out["dsr"]["N"] = n_all
     trials = pd.concat({n: ret_of(nav_of("spot", n), D) - rf().reindex(ret_of(nav_of("spot", n), D).index).fillna(0.0)
                         for n in names}, axis=1).dropna()

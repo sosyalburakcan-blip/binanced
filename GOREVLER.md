@@ -17,11 +17,11 @@ verify` → ok). Ön kayıt dondurulmadan gerçek fiyat verisinde v4 ızgarası 
    (yeni dosyalar: GOREVLER.md, PREREGISTRATION_v4.md, research_v4.yaml, reports/V4_fees_tax.md,
    src/trend/intraday/*, src/trend/data/intraday.py, tests/test_intraday_*.py, tests/test_data_intraday.py,
    tests/fixtures/intraday/*). `git tag -a prereg-v4`. `data/intraday/` git'e girmez (gitignore'a ekle).
-4. [ ] Bir kez: `python -m uv run python -m trend.intraday.study run` (arka planda; ~30–60 dk; kayıt
+4. [x] Bir kez: `python -m uv run python -m trend.intraday.study run` (arka planda; ~30–60 dk; kayıt
    `lock/V4_run.json`) → `python -m uv run python -m trend.intraday.study report` → `reports/V4_intraday_momentum.md`.
-5. [ ] En iyi yapılandırma 1–6 ve 8. kriterleri geçerse: bağımsız kontrol ajanı (motoru görmeden, yalnız
+5. [x] (atlandı: kriterler geçmedi) En iyi yapılandırma 1–6 ve 8. kriterleri geçerse: bağımsız kontrol ajanı (motoru görmeden, yalnız
    PREREGISTRATION_v4 + veriden sinyal ve işlem listesini yeniden hesaplar).
-6. [ ] `reports/V4_ozet.md` (Türkçe, sade: en iyi liste, bekletme sonucu, kaldıraç–spot farkı, vergi), experiments
+6. [x] `reports/V4_ozet.md` (Türkçe, sade: en iyi liste, bekletme sonucu, kaldıraç–spot farkı, vergi), experiments
    satır 24, commit.
 
 ## B. Canlı kâğıt takip (websocket, anahtarsız herkese açık veri)
