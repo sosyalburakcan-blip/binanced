@@ -13,3 +13,4 @@ data/ledger.csv
 .env
 .env.*
 data/intraday/
+data/live/

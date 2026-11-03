@@ -26,16 +26,16 @@ verify` → ok). Ön kayıt dondurulmadan gerçek fiyat verisinde v4 ızgarası 
 
 ## B. Canlı kâğıt takip (websocket, anahtarsız herkese açık veri)
 
-7. [ ] `src/trend/live/stream.py`: spot `wss://stream.binance.com:9443`, vadeli `wss://fstream.binance.com`;
+7. [x] `src/trend/live/stream.py`: spot `wss://stream.binance.com:9443`, vadeli `wss://fstream.binance.com`;
    akışlar `kline_15m`, `bookTicker`, `depth20@100ms`, vadeli `markPrice@1s` (fonlama). Yeniden bağlanma (24 saatte
    bir kopma), ping/pong, saat senkronu (REST `/api/v3/time`), boşluk tespiti.
-8. [ ] `src/trend/live/paper.py`: v4 en iyi 3 yapılandırma + BTC-200 kıyası; saat kapanışında sinyal (sim.py ile
+8. [x] `src/trend/live/paper.py`: v4 en iyi 3 yapılandırma + BTC-200 kıyası; saat kapanışında sinyal (sim.py ile
    aynı fonksiyonlar); dolum emir defterinde yürüyerek (bizim emir büyüklüğümüzde VWAP), kâr al limit/zarar kes
    stop; komisyon (spot %0,10; vadeli yapıcı %0,02, alıcı %0,05), fonlama, kaldıraç 1×/2×/3× ve spot paralel kâğıt
    hesaplar; tasfiye işaret fiyatıyla.
-9. [ ] Kayıt `data/live/live.db` (SQLite): sinyaller, kâğıt emirler, dolumlar, kayma (baz puan, varsayımla fark),
+9. [x] Kayıt `data/live/live.db` (SQLite): sinyaller, kâğıt emirler, dolumlar, kayma (baz puan, varsayımla fark),
    defter anlık görüntüleri (işlem anında), hatalar/kopmalar. Günlük rapor `reports/live/YYYY-MM-DD.md`.
-10. [ ] Tutarlılık: her gün canlı sinyaller = aynı saatlerin motor sinyalleri (fark → hata kaydı).
-11. [ ] Çalıştırma: `python -m uv run python -m trend.live.paper` arka planda; otomatik başlatma kullanıcı onayıyla.
+10. [x] Tutarlılık: her gün canlı sinyaller = aynı saatlerin motor sinyalleri (fark → hata kaydı).
+11. [x] (başlatıldı; otomatik başlatma kullanıcı onayı bekliyor) Çalıştırma: `python -m uv run python -m trend.live.paper` arka planda; otomatik başlatma kullanıcı onayıyla.
 12. [ ] Haftalık: gerçekleşen kayma ve maliyet vs varsayım, kâğıt PnL vs backtest beklentisi; 1–3 ay sonra maliyet
     sonucu, 6–12 ay sonra kârlılık sonucu.

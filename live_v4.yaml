@@ -1,0 +1,16 @@
+# Canlı kâğıt takip (gölge mod; GERÇEK EMİR YOK) — v4 tasarım döneminde en iyi 3 kural + BTC-200 kıyası.
+# Seçim kuralı GOREVLER.md B.8: v4 tasarım sıralamasının ilk 3'ü (bekletme sonucuna bakılarak seçilmedi).
+# v4 ön kayıtlı kriterleri geçmedi (reports/V4_ozet.md): amaç gerçek kayma/komisyon/fonlamayı ölçmek; beklenti düşük.
+
+capital_usdt: 1000                   # her kâğıt hesabın başlangıç sermayesi
+leverage: [1, 2, 3]                  # vadeli kâğıt hesaplar; ayrıca spot 1×
+strategies:                          # alanlar trend.intraday.sim.Params ile aynı
+  - {name: L6_z2_k6_tp4_sl4_h72, lookback_h: 6, z_entry: 2.0, confirm_h: 6, tp: 0.04, sl: 0.04, max_hold_h: 72}
+  - {name: L6_z2_k3_tp4_sl4_h72, lookback_h: 6, z_entry: 2.0, confirm_h: 3, tp: 0.04, sl: 0.04, max_hold_h: 72}
+  - {name: L6_z2_k6_tp4_sl4_h24, lookback_h: 6, z_entry: 2.0, confirm_h: 6, tp: 0.04, sl: 0.04, max_hold_h: 24}
+baseline: btc_200                    # BTC > SMA200 → %100 BTC, değilse nakit; günlük karar 00:00 UTC
+# Sabitler research_v4.yaml'dan: vol_window_h 168, n_top 3, slots 3; ücretler costs.spot / costs.futures.
+run:                                 # bookTicker çıkarıldı: vadelide saniyede binlerce mesaj, okuyamayınca Binance bağlantıyı kesiyor;
+                                     # defter depth20@100ms'den, TP/SL tetikleri aggTrade'den geliyor
+  spot_streams: [kline_15m, depth20@100ms, aggTrade]
+  futures_streams: [kline_15m, depth20@100ms, aggTrade, markPrice@1s]
