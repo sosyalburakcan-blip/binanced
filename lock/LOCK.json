@@ -1,0 +1,36 @@
+{
+ "lock_date": "2026-11-01",
+ "created_utc": "2026-11-03 14:58:54",
+ "head_at_snapshot": "92c8c3860dc20b6ac4462a7d5b1da8f8e4276069",
+ "prereg_tag": "prereg-v1",
+ "data_manifest": "lock/data_manifest.csv",
+ "data_manifest_sha256": "b3135253bb73be25ef257b033c8b023066e735fd00dbab70827a9317d6e77193",
+ "n_files": 2061,
+ "bytes": 1544590296,
+ "snapshot_keys": [
+  "merged",
+  "quality_flags",
+  "meta",
+  "universe",
+  "ledger"
+ ],
+ "coverage": {
+  "1d": {
+   "files": 746,
+   "last_open_time": "2026-11-01 00:00:00",
+   "files_at_last": 519
+  },
+  "1h": {
+   "files": 746,
+   "last_open_time": "2026-11-01 23:00:00",
+   "files_at_last": 519
+  }
+ },
+ "hashes": {
+  "settings.yaml": "7233684884b76ea7e668474f164899885175e9f741c065504cd2df9f79771059",
+  "PREREGISTRATION.md": "a216875e5ba28c46853fd19cdf99a82f27f568917e65347305bba3850a1432d7",
+  "pyproject.toml": "4409fb6c3448b87f25bdc47e3c01e7363b203a04a3a2f9fd4fb9de014ddbb1bb",
+  "uv.lock": "b484f2a61abeb04c6793465c007f7082871a051ad57bd08b0affee13e812eac0"
+ },
+ "hash_seconds": 1.8
+}

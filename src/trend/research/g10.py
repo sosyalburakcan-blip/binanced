@@ -255,11 +255,13 @@ def _fmt(x, nd=2, pct=False):
 # Rapor
 
 
-def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool = True) -> dict:
+def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool = True,
+            focus: str = "development") -> dict:
+    """Tüm istatistikler `focus` döneminde (G10–G11: geliştirme; G12: tam dönem). Metrik tabloları her dönem için."""
     log = print if verbose else (lambda *a, **k: None)
     cfg = inp.cfg
-    periods = periods_from_settings(cfg, "development")
-    dev = periods["development"]
+    periods = periods_from_settings(cfg, inp.stage, inp.end if inp.stage == "full" else None)
+    per = periods[focus]
     reg_names = [k for k in periods if k.startswith("regime")]
     out: dict = {"periods": periods}
 
@@ -268,21 +270,21 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
     out["core"] = {p: metrics_table(inp, core, periods[p]) for p in periods}
     t0 = load_run(inp, "T0")
     t0_cfg = resolve_settings(cfg, {})
-    out["t0_full"] = compute_metrics(t0.daily, t0.cycles, inp.rf, inp.rf, dev[0], dev[1], t0.weights, t0_cfg)
+    out["t0_full"] = compute_metrics(t0.daily, t0.cycles, inp.rf, inp.rf, per[0], per[1], t0.weights, t0_cfg)
     btc200_full = load_run(inp, "B_btc200")
-    out["b200_full"] = compute_metrics(btc200_full.daily, btc200_full.cycles, inp.rf, inp.rf, dev[0], dev[1],
+    out["b200_full"] = compute_metrics(btc200_full.daily, btc200_full.cycles, inp.rf, inp.rf, per[0], per[1],
                                        btc200_full.weights, t0_cfg)
 
     # --- nakit getirisi duyarlılığı, sabit tutar ---
     sens = ["T0", "T0_cash_m15", "T0_cash_tb", "B_btc200", "B_btc200_cash_m15", "B_btc200_cash_tb", "T0_fixed"]
-    out["sens"] = metrics_table(inp, sens, dev, ["annual_return", "annual_return_simple", "sharpe", "max_drawdown",
+    out["sens"] = metrics_table(inp, sens, per, ["annual_return", "annual_return_simple", "sharpe", "max_drawdown",
                                                  "avg_cash_share", "cash_drag_annual"])
 
     # --- dolar cinsinden (USDCUSDT'nin tersi vekil) ---
-    out["usd"] = usd_table(inp, ["T0", "B_btc200"], dev)
+    out["usd"] = usd_table(inp, ["T0", "B_btc200"], per)
 
     # --- regresyon ---
-    r0, rb, rew = (period_ret(inp, n, dev) for n in ("T0", "B_btchold", "B_univew"))
+    r0, rb, rew = (period_ret(inp, n, per) for n in ("T0", "B_btchold", "B_univew"))
     out["factor"] = factor_regression(r0, rb, rew, inp.rf)
     out["updown"] = up_down_beta(r0, rb, inp.rf)
 
@@ -290,7 +292,7 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
     log("[analiz] sıfır hipotezleri")
     close = inp.panel_1d["close"]
     rets_all = C.asset_returns(close)
-    w_end = t0.weights.loc[dev[0]: dev[1]]
+    w_end = t0.weights.loc[per[0]: per[1]]
     mem = C.membership(inp.universes["main"], w_end.index, list(close.columns))
     rets = rets_all.reindex(index=w_end.index)
     w_hold = C.hold_weights(w_end, rets[w_end.columns])
@@ -313,13 +315,13 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
 
     # --- kontroller ---
     log("[analiz] kontroller")
-    s_t0 = sr(inp, "T0", dev)
-    s_t3 = sr(inp, "T3", dev)
+    s_t0 = sr(inp, "T0", per)
+    s_t3 = sr(inp, "T3", per)
     ctl = []
 
     def shuffle_like(prefix, label):
-        s = [sr(inp, f"{prefix}{k}", dev) for k in range(n_seeds)]
-        a = [compute_metrics(load_run(inp, f"{prefix}{k}").daily, None, inp.rf, None, dev[0], dev[1])["scalars"]
+        s = [sr(inp, f"{prefix}{k}", per) for k in range(n_seeds)]
+        a = [compute_metrics(load_run(inp, f"{prefix}{k}").daily, None, inp.rf, None, per[0], per[1])["scalars"]
              for k in range(n_seeds)]
         ann = float(np.mean([x["annual_return"] for x in a]))
         costa = float(np.mean([x.get("cost_annual", np.nan) for x in a]))
@@ -336,29 +338,29 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
     ok = (med < 0.5 * obs[0]) if obs[0] > 0 else None
     ctl.append(("Bir coinin sinyali başka coinin getirisine", "Avantaj büyük ölçüde kaybolur",
                 f"{OTHER_COIN_RUNS} eşleme medyan Sharpe {med:.2f} (gözlenen, basit hesap {obs[0]:.2f})", ok))
-    s365 = sr(inp, "C_lag365", dev)
+    s365 = sr(inp, "C_lag365", per)
     ctl.append(("Sinyal 365 gün gecikmeli", "Avantaj kaybolur", f"Sharpe {s365:.2f} (T0 {s_t0:.2f})",
                 (s365 <= 0.5 * s_t0) if s_t0 > 0 else None))
-    inv = bs.paired_sharpe_test(period_ret(inp, "T0", dev), period_ret(inp, "C_inverse", dev), inp.rf, cfg=cfg)
+    inv = bs.paired_sharpe_test(period_ret(inp, "T0", per), period_ret(inp, "C_inverse", per), inp.rf, cfg=cfg)
     ctl.append(("Orijinal − ters sinyal", "Anlamlı ölçüde sıfırın üzerinde",
                 f"ΔSharpe {inv['sharpe_diff']:.2f}, %95 GA {inv['ci95_diff'][0]:.2f}…{inv['ci95_diff'][1]:.2f}, "
                 f"p = {inv['p_value']:.4f} (ters sinyal Sharpe {inv['sharpe_benchmark']:.2f})", inv["passed"]))
     for lag in (1, 3):
-        s_l = sr(inp, f"C_lag{lag}", dev)
+        s_l = sr(inp, f"C_lag{lag}", per)
         ctl.append((f"Kararlar {lag} gün gecikmeli (sinyal gecikmesi)", "Biraz bozulur, çökmez",
                     f"Sharpe {s_l:.2f} (T0 {s_t0:.2f})", (s_l >= 0.5 * s_t0) if s_t0 > 0 else None))
-    t8 = {n: sr(inp, n, dev) for n in [s.name for s in variant_specs() if s.name.startswith("T8")]}
+    t8 = {n: sr(inp, n, per) for n in [s.name for s in variant_specs() if s.name.startswith("T8")]}
     ctl.append(("Mum zamanlaması değişir (T8, 5 saat + 6 giriş günü)", "Benzer sonuç",
                 f"Sharpe aralığı {min(t8.values()):.2f}…{max(t8.values()):.2f} (T0 {s_t0:.2f})",
                 (min(t8.values()) >= 0.5 * s_t0) if s_t0 > 0 else None))
-    dy = C.drop_year_sharpes(period_ret(inp, "T0", dev), inp.rf)
+    dy = C.drop_year_sharpes(period_ret(inp, "T0", per), inp.rf)
     ctl.append(("Bir yıl çıkarılır", "Sonuç tek bir yıla bağlı olmamalı",
                 "Sharpe: " + ", ".join(f"{y}: {v:.2f}" for y, v in dy["sharpe"].items()), bool((dy["sharpe"] > 0).all())))
     w5 = C.remove_top_cycles(w_hold, cyc, 5)
     s5 = C.simple_stats(w5, rets, cost, inp.rf)[0]
     ctl.append(("En iyi 5 döngü çıkarılır", "Sıfıra yakın veya pozitif",
                 f"Sharpe (basit hesap) {s5:.2f}, tüm döngülerle {obs[0]:.2f}", bool(s5 >= -0.10)))
-    s_leak = sr(inp, "C_leak1", dev)
+    s_leak = sr(inp, "C_leak1", per)
     ctl.append(("Pozitif kontrol: sinyale 1 gün sızıntı", "Sharpe belirgin yükselir (yakalanmalı)",
                 f"Sharpe {s_leak:.2f} (T0 {s_t0:.2f})", bool(s_leak >= s_t0 + 1.0)))
     out["controls"], out["drop_year"], out["other_coin"] = ctl, dy, oc
@@ -366,23 +368,23 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
     # --- ızgara, PBO ---
     log("[analiz] ızgara, PBO, DSR, bootstrap")
     grid = ["T0"] + [s.name for s in grid_specs(cfg)]
-    gt = metrics_table(inp, grid, dev, ["sharpe", "annual_return", "annual_vol", "max_drawdown", "turnover_annual"])
+    gt = metrics_table(inp, grid, per, ["sharpe", "annual_return", "annual_vol", "max_drawdown", "turnover_annual"])
     gt.loc["sharpe_vs_base"] = gt.loc["sharpe"] / gt.loc["sharpe", "T0"]
     out["grid"] = gt
     out["grid_regimes"] = pd.DataFrame({p: {n: sr(inp, n, periods[p]) for n in grid} for p in reg_names})
-    trials = pd.concat({n: period_ret(inp, n, dev) - inp.rf.reindex(period_ret(inp, n, dev).index).fillna(0.0)
+    trials = pd.concat({n: period_ret(inp, n, per) - inp.rf.reindex(period_ret(inp, n, per).index).fillna(0.0)
                         for n in grid}, axis=1).dropna()
     out["pbo"] = pbo_cscv(trials.to_numpy())
 
     # --- varyantlar ---
     var = [s.name for s in variant_specs()]
-    out["variants"] = metrics_table(inp, ["T0"] + var, dev, ["sharpe", "annual_return", "max_drawdown",
+    out["variants"] = metrics_table(inp, ["T0"] + var, per, ["sharpe", "annual_return", "max_drawdown",
                                                              "avg_gross_exposure", "cost_annual"])
     out["variants_regimes"] = pd.DataFrame({p: {n: sr(inp, n, periods[p]) for n in ["T0"] + var} for p in reg_names})
     nav0, navb = load_run(inp, "T0").daily["nav"], load_run(inp, "B_btc200").daily["nav"]
     t10 = {}
     for wc in cfg["evaluation"]["core_satellite_core_weights"]:
-        nav = core_satellite(navb.loc[dev[0]: dev[1]], nav0.loc[dev[0]: dev[1]], float(wc))
+        nav = core_satellite(navb.loc[per[0]: per[1]], nav0.loc[per[0]: per[1]], float(wc))
         r = nav.pct_change().dropna()
         t10[f"T10_core{round(wc * 100)}"] = {"sharpe": sharpe(r - inp.rf.reindex(r.index).fillna(0.0), 365),
                                              "annual_return": float(nav.iloc[-1] ** (365 / len(r)) - 1),
@@ -395,18 +397,18 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
     trial_sr = np.array([out["grid"].loc["sharpe", n] for n in grid] + [out["variants"].loc["sharpe", n] for n in var]
                         + [t10[k]["sharpe"] for k in t10])
     n_trials = n_trials_for_dsr(n_exp, len(grid), n_var, cfg)
-    out["dsr"] = deflated_sharpe_ratio(period_ret(inp, "T0", dev), n_trials, trial_sharpes_annual=trial_sr,
+    out["dsr"] = deflated_sharpe_ratio(period_ret(inp, "T0", per), n_trials, trial_sharpes_annual=trial_sr,
                                        rf=inp.rf, cfg=cfg)
     out["dsr"].update(n_experiments=n_exp, grid_size=len(grid), n_variants=n_var)
 
     # --- bootstrap ---
-    r_t0, r_b200 = period_ret(inp, "T0", dev), period_ret(inp, "B_btc200", dev)
+    r_t0, r_b200 = period_ret(inp, "T0", per), period_ret(inp, "B_btc200", per)
     out["boot_sr"] = bs.bootstrap_sharpe(r_t0, inp.rf, cfg=cfg)
     out["paired"] = bs.paired_sharpe_test(r_t0, r_b200, inp.rf, cfg=cfg)
     out["paired_regimes"] = {p: bs.paired_sharpe_test(period_ret(inp, "T0", periods[p]),
                                                       period_ret(inp, "B_btc200", periods[p]), inp.rf, cfg=cfg)
                              for p in reg_names}
-    out["mdd_vs_ew"] = bs.paired_drawdown_comparison(r_t0, period_ret(inp, "B_univew", dev), cfg=cfg)
+    out["mdd_vs_ew"] = bs.paired_drawdown_comparison(r_t0, period_ret(inp, "B_univew", per), cfg=cfg)
     out["dd_horizon"] = bs.drawdown_horizon_table(r_t0, cfg=cfg)
     out["mintrl"] = min_track_record_from_returns(r_t0, inp.rf)
     out["satellite"] = satellite_from_returns(r_t0, r_b200, inp.rf, cfg)
@@ -423,23 +425,23 @@ def analyze(inp: ResearchInputs, n_seeds: int = N_CONTROL_SEEDS, verbose: bool =
     # --- ön kayıt dışı tanılar ---
     stops = {}
     for s in all_specs(cfg, n_seeds) + phase2_specs(inp):
-        d = load_run(inp, s.name).daily.loc[dev[0]: dev[1]]
+        d = load_run(inp, s.name).daily.loc[per[0]: per[1]]
         hs = d["hard_stop"]
         stops[s.name] = {"stop_days": int(hs.sum()), "first_stop": hs[hs > 0].index.min(),
                          "stopped_at_end": bool(hs.iloc[-1] > 0), "max_drawdown": float(d["drawdown"].min())}
     out["stops"] = pd.DataFrame(stops).T
     out["nostop"] = pd.DataFrame({p: {n: sr(inp, n, periods[p]) for n in ("T0", "D_T0_nostop")} for p in periods})
-    out["nostop_metrics"] = metrics_table(inp, ["T0", "D_T0_nostop"], dev, ["annual_return", "sharpe", "max_drawdown",
+    out["nostop_metrics"] = metrics_table(inp, ["T0", "D_T0_nostop"], per, ["annual_return", "sharpe", "max_drawdown",
                                                                            "avg_gross_exposure"])
-    dm = [sr(inp, f"D_shuffledm{k}", dev) for k in range(n_seeds)]
-    dma = [compute_metrics(load_run(inp, f"D_shuffledm{k}").daily, None, inp.rf, None, dev[0], dev[1])["scalars"]
+    dm = [sr(inp, f"D_shuffledm{k}", per) for k in range(n_seeds)]
+    dma = [compute_metrics(load_run(inp, f"D_shuffledm{k}").daily, None, inp.rf, None, per[0], per[1])["scalars"]
            for k in range(n_seeds)]
     out["shuffle_dm"] = {"sharpe_mean": float(np.mean(dm)), "sharpe_min": float(min(dm)), "sharpe_max": float(max(dm)),
                          "ann_mean": float(np.mean([x["annual_return"] for x in dma])),
                          "cost_mean": float(np.mean([x["cost_annual"] for x in dma]))}
 
     # --- yatırımcı çıtası ---
-    tb = inp.tbill_pct.loc[dev[0]: dev[1]]
+    tb = inp.tbill_pct.loc[per[0]: per[1]]
     out["tbill_mean"] = float(tb.mean() / 100.0)
     return out
 
@@ -620,7 +622,11 @@ def write_reports(inp: ResearchInputs, res: dict, timing: dict | None = None) ->
     g11 = rep / "G11_robustness.md"
     g11.write_text("\n".join(M) + "\n", encoding="utf-8", newline="\n")
     summary = {"T0_sharpe_dev": float(t0s.loc["sharpe", "T0"]), "BTC200_sharpe_dev": float(t0s.loc["sharpe", "B_btc200"]),
-               "pbo": pb["pbo"], "dsr": d["dsr"], "paired_p": p["p_value"]}
+               "pbo": pb["pbo"], "dsr": d["dsr"], "paired_p": p["p_value"],
+               "null_p": {k: x["p_sharpe"] for k, x in res["nulls"].items()},
+               "controls_ok": sum(1 for x in ctl_ok if x), "controls_n": sum(1 for x in ctl_ok if x is not None),
+               "neighbors_ok": k7, "mdd_vs_ew_passed": bool(m6["passed"]),
+               "T5_20_sharpe_dev": float(v.loc["sharpe", "T5_20"])}
     (cfg_path(inp.cfg, "backtests") / inp.stage / "summary.json").write_text(json.dumps(summary, indent=1),
                                                                              encoding="utf-8")
     return g10, g11
