@@ -2,8 +2,10 @@
 
     python -m uv run python -m trend.live.paper --config live_v4.yaml [--minutes N] [--db data/live/live.db]
 
-KURAL: GERÇEK EMİR YOK. Hiçbir emir/hesap/kullanıcı verisi uç noktası çağrılmaz, API anahtarı ve `.env` okunmaz;
-tüm "emirler" bellekte ve SQLite kaydında yaşayan kâğıt emirlerdir (stream.PublicRest yalnızca izinli yolları açar).
+KURAL: GERÇEK EMİR YOK. Hiçbir emir/hesap/kullanıcı verisi uç noktası çağrılmaz, Binance API anahtarı ve `.env`
+okunmaz; tüm "emirler" bellekte ve SQLite kaydında yaşayan kâğıt emirlerdir (stream.PublicRest yalnızca izinli yolları
+açar). Telefon bildirimi (trend.live.notify) yalnızca `.env.bildirim` dosyasını okur: giriş/çıkış, veri kesintisi,
+hata, günlük özet; dosya yoksa kapalı.
 
 Yapılandırma (`live_v4.yaml`, proje kökü):
     capital_usdt: 1000
@@ -55,6 +57,17 @@ Kurallar (sim.py modül notunun canlı karşılığı):
     Kapalı geçen süre için açık pozisyonlar REST 15 dk mumlarıyla sim.py kurallarıyla taranır (aynı mumda önce
     likidasyon/SL; TP yüksek > TP; SL ve süre dolumu fiyat·(1 − varsayılan kayma)) ve REST fundingRate ile fonlama
     tahsil edilir; bu çıkışlar `offline` işaretlenir.
+11. Maker yürütme (`run.execution: maker`; kıyas BTC-200 her zaman taker): emirler post-only limit, kâğıt üzerinde.
+    Giriş: en iyi BID'de alış, notional = margin·L sabit (adet = notional / fiyat), nakitten margin + maker ücreti
+    ayrılır, yuva dolu sayılır. BID yükselirse emir en fazla `maker_reprice_s`'de bir yeni en iyi BID'e taşınır (kuyruk
+    sıfırlanır); B + 1 sa'e kadar dolmazsa iptal (`entry_skip` unfilled). Dolum (hepsi bir anda): bir aggTrade emir
+    fiyatının KESİN ALTINDA basılınca ya da emir fiyatında satıcı-başlatan hacim, emir konduğunda o kademede görünen
+    miktar + kendi adedimizi aşınca. Pozisyon dolum anında açılır (p_in = emir fiyatı, maker ücreti), TP/SL/süre p_in'den.
+    TP (6) aynı kalır. SL tetiklenince (aggTrade ≤ SL) TP iptal, en iyi ASK'ta maker satış; ASK düşerse taşınır;
+    `sl_maker_s` içinde dolmazsa iptal ve piyasa satışı (6, `maker_timeout`). Süre dolunca aynısı `time_maker_s` ile;
+    süre satışı sürerken SL tetiklenirse SL beklemesine geçer. Satış dolumu girişin aynası (fiyatın kesin üstünde işlem
+    ya da emir fiyatında alıcı-başlatan hacim). Likidasyon işaret fiyatıyla sürer (çalışan emir iptal). Yeniden
+    başlatmada çalışan maker emirleri iptal sayılır.
 
 Varsayımlar:
 - TP dolumu tek seferde tam miktar (kuyruk önceliği yok sayılır; "kesin üstünde" kuralı bunu temkinli karşılar).
@@ -86,7 +99,9 @@ from trend.config import ROOT, load_settings
 from trend.config import path as cfg_path
 from trend.intraday import study
 from trend.intraday.sim import Costs, Params, hourly_signals
+from trend.live import health
 from trend.live.book import Books
+from trend.live.notify import Notifier
 from trend.live.recorder import DB_PATH, Recorder
 from trend.live.stream import (FUT, INVENTORY, SPOT, AggTrade, BookTicker, Depth, Kline, MarkPrice, PublicRest,
                                StreamManager, SymbolTable, clock_offset_ms, rest_bars, stream_urls)
@@ -118,7 +133,16 @@ RUN_DEFAULTS = {
     "universe_month": None,     # None = en son ay dosyası
     "spot_ws": None, "futures_ws": None, "spot_rest": None, "futures_rest": None,
     "spot_streams": None, "futures_streams": None,   # None = stream.KINDS (ör. bookTicker çıkarılabilir)
+    "notify_file": ".env.bildirim",  # telefon bildirimi anahtarları (trend.live.notify); None = kapalı
+    "notify_summary_utc_h": 6,      # günlük özet saati, UTC (6 = 09:00 Türkiye); None = özet yok
+    "notify_down_s": 300.0,         # bir piyasadan bu kadar süre hiç mesaj gelmezse uyarı
+    "execution": "taker",           # "maker": giriş/çıkışlar post-only limit (Kural 11); "taker": piyasa emri
+    "maker_reprice_s": 1.0,         # maker emri en iyi fiyata en sık bu aralıkla taşınır
+    "sl_maker_s": 30.0,             # zarar kes maker satışı bu kadar dolmazsa piyasa satışı
+    "time_maker_s": 300.0,          # süre dolumu maker satışı bu kadar dolmazsa piyasa satışı
 }
+REASON_TR = {"tp": "kâr al", "sl": "zarar kes", "time": "süre doldu", "liq": "LİKİDASYON", "baseline": "BTC-200 satış"}
+VENUE_TR = {SPOT: "spot", FUT: "vadeli"}
 
 
 def _utc(ms) -> str:
@@ -127,6 +151,48 @@ def _utc(ms) -> str:
 
 def _fin(x) -> bool:
     return x is not None and isinstance(x, (int, float, np.floating)) and math.isfinite(float(x))
+
+
+def _tr(ms) -> str:
+    """Türkiye saati (UTC+3, yaz saati yok)."""
+    return pd.Timestamp(int(ms) + 3 * 3_600_000, unit="ms").strftime("%d.%m %H:%M")
+
+
+def trade_text(kind: str, acc, pos, slip_bps=None, maker=False, moves=None) -> str:
+    """Telefon bildirimi satırı: giriş ("entry"), dolmayan maker giriş ("unfilled") veya çıkış ("exit")."""
+    lev = f" {acc.lev:g}×" if acc.venue == FUT else ""
+    head = f"{acc.acc_id} {pos.asset}"
+    if kind == "unfilled":
+        return (f"⚪ GİRİŞ DOLMADI {head}{lev} · maker alış {pos.p_in:.6g}"
+                + (f" ({moves} kez taşındı)" if moves else "") + " · iptal")
+    if kind == "entry":
+        s = f"🟢 GİRİŞ {head} @ {pos.p_in:.6g} · {pos.notional:.0f}${lev} · ücret {pos.fee_in:.2f}$"
+        if maker:
+            s += " · maker"
+        if _fin(slip_bps):
+            s += f" · karar fiyatına göre {slip_bps:+.1f}bps" if maker else f" · kayma {slip_bps:.1f}bps"
+        if _fin(pos.tp_px) and _fin(pos.sl_px):
+            s += f"\n   kâr al {pos.tp_px:.6g} · zarar kes {pos.sl_px:.6g}"
+            if _fin(pos.liq_px):
+                s += f" · likidasyon {pos.liq_px:.6g}"
+            if pos.deadline_ms is not None:
+                s += f" · en geç {_tr(pos.deadline_ms)}"
+        return s
+    pnl = float(pos.pnl or 0.0)
+    base = pos.margin + pos.fee_in
+    pct = f" ({pnl / base * 100:+.1f}%)" if base > 0 else ""
+    held = ((pos.exit_ms or pos.entry_ms) - pos.entry_ms) / 3_600_000
+    s = (f"{'✅' if pnl > 0 else '🔴'} ÇIKIŞ {head} {REASON_TR.get(pos.reason, pos.reason)} @ {float(pos.p_out):.6g}"
+         f" · {pnl:+.2f}${pct} · {held:.1f} sa · ücret {pos.fee_in + pos.fee_out:.2f}$")
+    if pos.funding:
+        s += f" · fonlama {-pos.funding:+.2f}$"
+    if "maker_timeout" in (pos.flags or ""):
+        s += " · maker dolmadı → piyasa satışı"
+    elif "maker_exit" in (pos.flags or ""):
+        s += " · maker"
+    if "offline" in (pos.flags or ""):
+        s += " · (program kapalıyken)"
+    return s
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -214,6 +280,8 @@ def load_config(path, research_path=None) -> LiveConfig:
     lev = [float(x) for x in (y.get("leverage") or [])]
     if any(not x >= 1 for x in lev):
         raise ValueError("kaldıraç ≥ 1 olmalı")
+    if run["execution"] not in ("taker", "maker"):
+        raise ValueError(f"execution 'taker' veya 'maker' olmalı: {run['execution']!r}")
     return LiveConfig(capital=float(y.get("capital_usdt", 1000.0)), leverage=lev, strategies=strategies,
                       baseline=baseline, vol_window_h=int(fixed["vol_window_h"]), n_top=int(fixed["n_top"]),
                       slots=int(fixed["slots"]),
@@ -366,6 +434,7 @@ class Position:
     tp_order: str | None = None
     sl_order: str | None = None
     funded: set = field(default_factory=set)
+    maker: MakerOrder | None = None     # çalışan maker emri: bekleyen giriş ya da SL/süre satışı (Kural 11)
 
     def value(self, px: float) -> float:
         v = self.margin + self.qty * (px - self.p_in)
@@ -393,6 +462,38 @@ class Position:
 
 
 @dataclass
+class MakerOrder:
+    """Kural 11: post-only limit kâğıt emri; `queue` = konduğu anda o kademede önümüzde görünen miktar."""
+    oid: str
+    side: str                      # "buy" (giriş) / "sell" (SL, süre)
+    reason: str                    # "entry" / "sl" / "time"
+    price: float
+    queue: float
+    placed_ms: int
+    deadline_ms: int               # giriş: iptal; satış: piyasa satışına geçiş
+    ref_mid: float                 # ilk konduğu anki orta fiyat
+    traded: float = 0.0            # emir fiyatında karşı tarafın başlattığı toplam hacim
+    moved_ms: int = 0
+    n_moves: int = 0
+
+    def hit(self, price: float, qty: float, buyer_maker: bool | None, own_qty: float) -> bool:
+        """aggTrade emri doldurur mu: fiyat emrin kesin ötesinde ya da emir fiyatındaki kuyruk + kendi adedimiz tükendi."""
+        if (self.side == "buy" and price < self.price) or (self.side == "sell" and price > self.price):
+            return True
+        if abs(price - self.price) <= 1e-9 * self.price and buyer_maker is (self.side == "buy"):
+            self.traded += qty
+        return self.traded >= self.queue + own_qty
+
+    def detail(self, ts_ms: int, **extra) -> dict:
+        return {"ref_mid": self.ref_mid, "first_ms": self.placed_ms, "wait_s": (ts_ms - self.placed_ms) / 1000,
+                "n_moves": self.n_moves, "queue": self.queue, **extra}
+
+
+def _level_qty(levels, price: float) -> float:
+    return next((q for p, q in levels if abs(p - price) <= 1e-9 * price), 0.0)
+
+
+@dataclass
 class Account:
     acc_id: str
     strategy: StrategyCfg | None
@@ -406,10 +507,16 @@ class Account:
     recent: list = field(default_factory=list)         # son bir günde kapananlar (fonlama, yuva kuralı)
     ledger: list = field(default_factory=list)         # (olay zamanı ms, nakit akışı): çıkışlar ve fonlama
     n_trades: int = 0
+    pending: dict = field(default_factory=dict)        # varlık → dolmamış maker girişi (Position, status "pending")
 
     @property
     def name(self) -> str:
         return self.strategy.name if self.strategy is not None else self.acc_id.split("/")[0]
+
+    @property
+    def reserved(self) -> float:
+        """Bekleyen maker girişleri için nakitten ayrılan margin + ücret."""
+        return sum(p.margin + p.fee_in for p in self.pending.values())
 
 
 def _join(*flags) -> str:
@@ -420,12 +527,13 @@ class PaperBroker:
     """Kâğıt hesaplar, girişler (ASK yürüyüşü), çıkışlar (TP/SL/süre/likidasyon), fonlama ve kayıt."""
 
     def __init__(self, cfg: LiveConfig, books: Books, rec: Recorder, assumed_slip: dict, ids: IdGen | None = None,
-                 price_fn=None, log=None):
+                 price_fn=None, log=None, notify=None):
         self.cfg, self.books, self.rec = cfg, books, rec
         self.slip = dict(assumed_slip)
         self.ids = ids or IdGen()
         self.price_fn = price_fn or (lambda venue, asset: math.nan)
         self.log = log or (lambda msg: None)
+        self.notify = notify or (lambda kind, acc, pos, **info: None)     # telefon bildirimi (giriş/çıkış)
         self.accounts: dict[str, Account] = {}
         for acc_id, s, venue, lev in cfg.account_specs():
             self.accounts[acc_id] = Account(acc_id, s, venue, lev, cfg.costs[venue], cfg.slots, cfg.capital,
@@ -434,6 +542,10 @@ class PaperBroker:
         self.orders: dict[str, dict] = {}
         self.book_stale_ms = int(float(cfg.run["book_stale_s"]) * 1000)
         self.book_wait_ms = int(float(cfg.run["book_wait_s"]) * 1000)
+        self.maker = cfg.run["execution"] == "maker"
+        self.reprice_ms = int(float(cfg.run["maker_reprice_s"]) * 1000)
+        self.exit_wait_ms = {"sl": int(float(cfg.run["sl_maker_s"]) * 1000),
+                             "time": int(float(cfg.run["time_maker_s"]) * 1000)}
         self.stats: dict[str, int] = defaultdict(int)
 
     # --- yardımcılar ---
@@ -500,6 +612,7 @@ class PaperBroker:
         B = int(sig["hour_ms"]) + H_MS
         col = {a: j for j, a in enumerate(assets)}
         opened = []
+        self.expire_entries(now_ms)
         for acc in self._by_venue[venue]:
             if acc.strategy is None:
                 continue
@@ -510,8 +623,8 @@ class PaperBroker:
                 continue
             cand = [int(j) for j in np.argsort(np.where(sel, -z, np.inf), kind="stable") if sel[j]]
             occ = list(acc.positions.values()) + [p for p in acc.recent if p.exit_ms is not None and p.exit_ms >= B]
-            held = {p.asset for p in occ}
-            free = acc.slots - len(occ)
+            held = {p.asset for p in occ} | set(acc.pending)
+            free = acc.slots - len(occ) - len(acc.pending)
             adj = sum(a for t, a in acc.ledger if t >= B)       # B ve sonrası akışlar: backtestte henüz nakitte değil
             eq = None
             for j in cand:
@@ -526,7 +639,7 @@ class PaperBroker:
                     continue
                 cash_b = acc.cash - adj
                 if eq is None:
-                    eq = cash_b + sum(p.value(self._close_px(sig, col, p)) for p in occ)
+                    eq = cash_b + acc.reserved + sum(p.value(self._close_px(sig, col, p)) for p in occ)
                 m = eq / acc.slots
                 cap = cash_b / (1.0 + acc.lev * (acc.costs.taker + acc.costs.tax_per_side))
                 capped = m > cap
@@ -535,7 +648,8 @@ class PaperBroker:
                 if not m > 0:
                     self._skip(acc, a, now_ms, "no_cash", float(z[j]))
                     continue
-                pos = self.open(acc, a, m, B, now_ms, z=float(z[j]), flags="margin_capped" if capped else "")
+                enter_fn = self.place_entry if self.maker else self.open
+                pos = enter_fn(acc, a, m, B, now_ms, z=float(z[j]), flags="margin_capped" if capped else "")
                 if pos is not None:
                     opened.append(pos)
                     held.add(a)
@@ -561,38 +675,145 @@ class PaperBroker:
         rate = acc.costs.taker + acc.costs.tax_per_side
         fee = N * rate
         acc.cash -= m + fee
-        s = acc.strategy
         pos = Position(pos_id=self.ids.next("p"), account=acc.acc_id, strategy=acc.name, venue=acc.venue,
                        lev=acc.lev, asset=asset, hour_ms=int(B), entry_ms=int(now_ms), p_in=p_in, qty=q, margin=m,
                        notional=N, fee_in=fee, z=z, flags=_join(flags, "shortfall" if w.shortfall_notional > 0 else ""))
-        if s is not None:
-            pos.tp_px, pos.sl_px = p_in * (1.0 + s.tp), p_in * (1.0 - s.sl)
-            pos.deadline_ms = int(B) + s.max_hold_h * H_MS
-        if acc.lev > 1:
-            pos.liq_px = p_in * (1.0 - 1.0 / acc.lev + acc.costs.mmr)
+        self._arm(acc, pos)
         acc.positions[asset] = pos
         oid = self.ids.next("o")
         self._order(oid, now_ms, acc, pos, "buy", "market", q, N, None, reason, "filled",
                     {"requested_notional": margin * acc.lev})
         self._fill(oid, now_ms, acc, pos, "buy", reason, "taker", q, N, p_in, w, fee, rate, book,
                    assumed_bps=self.assumed(asset) * 1e4, flags=pos.flags)
+        return self._entered(acc, pos, now_ms, w.slippage_bps)
+
+    def _arm(self, acc: Account, pos: Position) -> None:
+        """TP/SL/süre/likidasyon seviyeleri p_in'den."""
+        s = acc.strategy
         if s is not None:
+            pos.tp_px, pos.sl_px = pos.p_in * (1.0 + s.tp), pos.p_in * (1.0 - s.sl)
+            pos.deadline_ms = int(pos.hour_ms) + s.max_hold_h * H_MS
+        if acc.lev > 1:
+            pos.liq_px = pos.p_in * (1.0 - 1.0 / acc.lev + acc.costs.mmr)
+
+    def _entered(self, acc: Account, pos: Position, now_ms: int, slip_bps: float, maker: bool = False) -> Position:
+        """Dolmuş girişin ardından: dinlenen TP/SL emirleri, kayıt, bildirim."""
+        if acc.strategy is not None:
             pos.tp_order, pos.sl_order = self.ids.next("o"), self.ids.next("o")
-            self._order(pos.tp_order, now_ms, acc, pos, "sell", "limit", q, None, pos.tp_px, "tp", "open")
-            self._order(pos.sl_order, now_ms, acc, pos, "sell", "stop_market", q, None, pos.sl_px, "sl", "open")
+            self._order(pos.tp_order, now_ms, acc, pos, "sell", "limit", pos.qty, None, pos.tp_px, "tp", "open")
+            self._order(pos.sl_order, now_ms, acc, pos, "sell", "stop_maker" if maker else "stop_market", pos.qty,
+                        None, pos.sl_px, "sl", "open")
         self.rec.add("positions", **pos.row(now_ms))
         self.stats["entries"] += 1
-        self.log(f"GİRİŞ {acc.acc_id} {asset} p_in={p_in:.6g} notional={N:.2f} kayma={w.slippage_bps:.1f}bps")
+        how = f"maker, karar fiyatına göre {slip_bps:+.1f}bps" if maker else f"kayma={slip_bps:.1f}bps"
+        self.log(f"GİRİŞ {acc.acc_id} {pos.asset} p_in={pos.p_in:.6g} notional={pos.notional:.2f} {how}")
+        self.notify("entry", acc, pos, slip_bps=slip_bps, **({"maker": True} if maker else {}))
         return pos
 
-    # --- çıkışlar ---
-    def on_trade(self, venue: str, asset: str, price: float, ts_ms: int) -> None:
+    def place_entry(self, acc: Account, asset: str, margin: float, B: int, now_ms: int, z: float = math.nan,
+                    flags: str = "") -> Position | None:
+        """Kural 11: en iyi BID'de post-only limit alış; nakitten margin + maker ücreti ayrılır."""
+        book = self.books.get(acc.venue, asset)
+        px = book.best_bid if book is not None and not book.empty() else math.nan
+        if not (_fin(px) and px > 0):
+            self._skip(acc, asset, now_ms, "empty_book", z)
+            return None
+        N = margin * acc.lev
+        fee = N * (acc.costs.maker + acc.costs.tax_per_side)
+        pos = Position(pos_id=self.ids.next("p"), account=acc.acc_id, strategy=acc.name, venue=acc.venue,
+                       lev=acc.lev, asset=asset, hour_ms=int(B), entry_ms=int(now_ms), p_in=px, qty=N / px,
+                       margin=margin, notional=N, fee_in=fee, z=z, status="pending", flags=flags)
+        pos.maker = MakerOrder(self.ids.next("o"), "buy", "entry", px, _level_qty(book.bids, px), int(now_ms),
+                               int(B) + H_MS, book.mid, moved_ms=int(now_ms))
+        acc.cash -= margin + fee
+        acc.pending[asset] = pos
+        self._order(pos.maker.oid, now_ms, acc, pos, "buy", "limit_maker", pos.qty, N, px, "entry", "open",
+                    {"ref_mid": book.mid, "queue": pos.maker.queue, "deadline_ms": pos.maker.deadline_ms})
+        self.stats["maker_orders"] += 1
+        self.log(f"EMİR {acc.acc_id} {asset} maker alış @ {px:.6g} notional={N:.2f}")
+        return pos
+
+    def _entry_filled(self, acc: Account, pos: Position, ts_ms: int, trade_px: float) -> None:
+        o = pos.maker
+        acc.pending.pop(pos.asset, None)
+        pos.maker = None
+        pos.status, pos.entry_ms, pos.p_in = "open", int(ts_ms), o.price
+        pos.qty = pos.notional / o.price
+        self._arm(acc, pos)
+        acc.positions[pos.asset] = pos
+        rate = acc.costs.maker + acc.costs.tax_per_side
+        book = self.books.get(acc.venue, pos.asset)
+        row = self.orders.get(o.oid)
+        if row is not None:
+            row.update(price=o.price, qty=pos.qty)
+        self._order_done(o.oid, "filled", ts_ms, o.detail(ts_ms, trade_px=trade_px))
+        self._fill(o.oid, ts_ms, acc, pos, "buy", "entry", "maker", pos.qty, pos.notional, pos.p_in, None,
+                   pos.fee_in, rate, book, assumed_bps=0.0, flags=_join(pos.flags, "maker"))
+        slip = (o.price / o.ref_mid - 1.0) * 1e4 if _fin(o.ref_mid) and o.ref_mid > 0 else math.nan
+        self._entered(acc, pos, ts_ms, slip, maker=True)
+
+    def expire_entries(self, now_ms: int) -> None:
+        """Süresi (B + 1 sa) dolan maker girişleri iptal: ayrılan nakit geri, `entry_skip` unfilled."""
+        for acc in self.accounts.values():
+            for asset, pos in list(acc.pending.items()):
+                o = pos.maker
+                if now_ms < o.deadline_ms:
+                    continue
+                acc.pending.pop(asset)
+                acc.cash += pos.margin + pos.fee_in
+                row = self.orders.get(o.oid)
+                if row is not None:
+                    row.update(price=o.price)
+                self._order_done(o.oid, "canceled", now_ms, o.detail(now_ms, why="unfilled"))
+                self._skip(acc, asset, now_ms, "unfilled", pos.z)
+                self.log(f"DOLMADI {acc.acc_id} {asset} maker alış @ {o.price:.6g} ({o.n_moves} taşıma) → iptal")
+                pos.p_in = o.price
+                self.notify("unfilled", acc, pos, moves=o.n_moves)
+
+    def on_book(self, venue: str, asset: str, ts_ms: int) -> None:
+        """Kural 11: çalışan maker emri en iyi fiyattan geride kaldıysa taşınır (kuyruk sıfırlanır)."""
+        if not self.maker:
+            return
+        book = self.books.get(venue, asset)
+        if book is None or book.empty():
+            return
         for acc in self._by_venue[venue]:
+            pos = acc.pending.get(asset) or acc.positions.get(asset)
+            o = pos.maker if pos is not None else None
+            if o is None:
+                continue
+            levels = book.bids if o.side == "buy" else book.asks
+            best = levels[0][0]
+            behind = best > o.price if o.side == "buy" else best < o.price
+            if behind and ts_ms - o.moved_ms >= self.reprice_ms:
+                o.price, o.queue, o.traded = best, levels[0][1], 0.0
+                o.moved_ms, o.n_moves = int(ts_ms), o.n_moves + 1
+
+    # --- çıkışlar ---
+    def on_trade(self, venue: str, asset: str, price: float, ts_ms: int, qty: float = 0.0,
+                 buyer_maker: bool | None = None) -> None:
+        for acc in self._by_venue[venue]:
+            pend = acc.pending.get(asset)
+            if pend is not None:
+                if pend.maker.hit(price, qty, buyer_maker, pend.notional / pend.maker.price):
+                    self._entry_filled(acc, pend, ts_ms, price)
+                continue
             pos = acc.positions.get(asset)
             if pos is None:
                 continue
+            o = pos.maker
+            if o is not None:                              # SL/süre maker satışı çalışıyor; TP iptal edildi
+                if o.reason == "time" and price <= pos.sl_px:
+                    o.reason = "sl"
+                    o.deadline_ms = min(o.deadline_ms, int(ts_ms) + self.exit_wait_ms["sl"])
+                if o.hit(price, qty, buyer_maker, pos.qty):
+                    self._exit_filled(acc, pos, ts_ms, price)
+                continue
             if price <= pos.sl_px:
-                self.exit_market(acc, pos, ts_ms, "sl", trigger=pos.sl_px, detail={"trade_px": price})
+                if self.maker:
+                    self.start_exit(acc, pos, ts_ms, "sl", detail={"trade_px": price})
+                else:
+                    self.exit_market(acc, pos, ts_ms, "sl", trigger=pos.sl_px, detail={"trade_px": price})
             elif price > pos.tp_px:
                 self.exit_tp(acc, pos, ts_ms, price)
 
@@ -603,23 +824,80 @@ class PaperBroker:
                 self.liquidate(acc, pos, ts_ms, mark)
 
     def on_timer(self, now_ms: int) -> None:
+        self.expire_entries(now_ms)
         for acc in self.accounts.values():
             for pos in list(acc.positions.values()):
+                o = pos.maker
+                if o is not None:
+                    if now_ms >= o.deadline_ms:                # maker satış dolmadı → piyasa satışı
+                        self.maker_timeout(acc, pos, now_ms)
+                    continue
                 if pos.deadline_ms is None or now_ms < pos.deadline_ms:
                     continue
                 if self.fresh_book(acc.venue, pos.asset, now_ms) is None and now_ms - pos.deadline_ms < self.book_wait_ms:
                     continue                               # taze defter beklenir
-                self.exit_market(acc, pos, now_ms, "time")
+                if self.maker:
+                    self.start_exit(acc, pos, now_ms, "time")
+                else:
+                    self.exit_market(acc, pos, now_ms, "time")
             if acc.recent and acc.recent[0].exit_ms < now_ms - DAY_MS:
                 acc.recent = [p for p in acc.recent if p.exit_ms >= now_ms - DAY_MS]
             if acc.ledger and acc.ledger[0][0] < now_ms - DAY_MS:
                 acc.ledger = [x for x in acc.ledger if x[0] >= now_ms - DAY_MS]
 
+    def start_exit(self, acc: Account, pos: Position, ts_ms: int, reason: str, detail: dict | None = None) -> None:
+        """Kural 11: SL tetiklendi / süre doldu → TP iptal, en iyi ASK'ta post-only limit satış."""
+        book = self.fresh_book(acc.venue, pos.asset, ts_ms)
+        if book is None:                                   # taze defter yok: maker emri konamaz → piyasa satışı
+            self.exit_market(acc, pos, ts_ms, reason, trigger=pos.sl_px if reason == "sl" else None, detail=detail)
+            return
+        px = book.best_ask
+        pos.maker = MakerOrder(self.ids.next("o"), "sell", reason, px, book.asks[0][1], int(ts_ms),
+                               int(ts_ms) + self.exit_wait_ms[reason], book.mid, moved_ms=int(ts_ms))
+        if pos.tp_order:
+            self._order_done(pos.tp_order, "canceled", ts_ms)
+            pos.tp_order = None
+        if reason == "sl" and pos.sl_order:
+            self._order_done(pos.sl_order, "triggered", ts_ms, detail)
+            pos.sl_order = None
+        self._order(pos.maker.oid, ts_ms, acc, pos, "sell", "limit_maker", pos.qty, pos.qty * px, px, reason, "open",
+                    {"ref_mid": book.mid, "queue": pos.maker.queue, **(detail or {})})
+        self.log(f"ÇIKIŞ EMRİ {acc.acc_id} {pos.asset} {reason} maker satış @ {px:.6g}")
+
+    def _exit_filled(self, acc: Account, pos: Position, ts_ms: int, trade_px: float) -> None:
+        o = pos.maker
+        p_out = o.price
+        if acc.lev > 1 and p_out <= pos.liq_px:
+            self.liquidate(acc, pos, ts_ms, p_out, flags=f"{o.reason}_below_liq")
+            return
+        rate = acc.costs.maker + acc.costs.tax_per_side
+        fee = pos.qty * p_out * rate
+        flow = pos.margin + pos.qty * (p_out - pos.p_in) - fee
+        row = self.orders.get(o.oid)
+        if row is not None:
+            row.update(price=p_out, notional=pos.qty * p_out)
+        detail = o.detail(ts_ms, trade_px=trade_px)
+        self._close(acc, pos, ts_ms, p_out, o.reason, fee, flow, "maker_exit", filled=o.oid, detail=detail)
+        self._fill(o.oid, ts_ms, acc, pos, "sell", o.reason, "maker", pos.qty, pos.qty * p_out, p_out, None, fee,
+                   rate, self.books.get(acc.venue, pos.asset), trigger=pos.sl_px if o.reason == "sl" else None,
+                   assumed_bps=0.0, flags="maker_exit")
+
+    def maker_timeout(self, acc: Account, pos: Position, now_ms: int) -> None:
+        """Maker satış süresinde dolmadı: iptal ve piyasa satışı (BID yürüyüşü, taker)."""
+        o = pos.maker
+        pos.maker = None
+        row = self.orders.get(o.oid)
+        if row is not None:
+            row.update(price=o.price)
+        self._order_done(o.oid, "canceled", now_ms, o.detail(now_ms, why="maker_timeout"))
+        self.exit_market(acc, pos, now_ms, o.reason, trigger=pos.sl_px if o.reason == "sl" else None,
+                         detail={"maker_price": o.price, "n_moves": o.n_moves}, flags="maker_timeout")
+
     def exit_market(self, acc: Account, pos: Position, ts_ms: int, reason: str, trigger: float | None = None,
-                    detail: dict | None = None) -> None:
+                    detail: dict | None = None, flags: str = "") -> None:
         """Piyasa satışı (SL tetiklendi, süre doldu veya kıyas kararı): BID tarafında qty yürünür, taker."""
         book = self.books.get(acc.venue, pos.asset)
-        flags = ""
+        base_flags, flags = flags, ""
         w = book.walk_qty("sell", pos.qty) if book is not None and not book.empty() else None
         if w is not None and w.filled_qty > 0:
             notional = w.filled_notional + (w.shortfall_qty * w.worst if w.shortfall_qty > 0 else 0.0)
@@ -633,6 +911,7 @@ class PaperBroker:
             p_out = ref * (1.0 - self.assumed(pos.asset))
             notional = pos.qty * p_out
             flags, w = "no_book", None
+        flags = _join(base_flags, flags)
         if acc.lev > 1 and p_out <= pos.liq_px:
             self.liquidate(acc, pos, ts_ms, p_out, flags=_join(flags, f"{reason}_below_liq"))
             return
@@ -698,13 +977,15 @@ class PaperBroker:
         acc.positions.pop(pos.asset, None)
         acc.recent.append(pos)
         acc.n_trades += 1
-        for oid in (pos.tp_order, pos.sl_order):
+        for oid in (pos.tp_order, pos.sl_order, pos.maker.oid if pos.maker is not None else None):
             if oid:
                 self._order_done(oid, "filled" if oid == filled else "canceled", ts_ms,
                                  detail if oid == filled else None)
+        pos.maker = None
         self.rec.add("positions", **pos.row(ts_ms))
         self.stats[f"exit_{reason}"] += 1
         self.log(f"ÇIKIŞ {acc.acc_id} {pos.asset} {reason} p_out={p_out:.6g} pnl={pos.pnl:+.2f}")
+        self.notify("exit", acc, pos)
 
     # --- fonlama ---
     def on_funding(self, asset: str, funding_ms: int, rate: float, mark: float, ts_ms: int,
@@ -736,7 +1017,8 @@ class PaperBroker:
     # --- özsermaye ---
     def equity(self, acc: Account) -> tuple[float, float, float, int]:
         pv = sum(p.value(self.px(acc.venue, p)) for p in acc.positions.values())
-        return acc.cash, pv, acc.cash + pv, len(acc.positions)
+        cash = acc.cash + acc.reserved                    # bekleyen maker girişine ayrılan nakit hâlâ hesapta
+        return cash, pv, cash + pv, len(acc.positions)
 
     def snapshot(self, ts_ms: int) -> None:
         for acc in self.accounts.values():
@@ -749,6 +1031,8 @@ class PaperBroker:
         """Kural 10: hesap tanımları ve açık pozisyonlar veritabanından."""
         known = {r["account"]: r for r in self.rec.rows("SELECT * FROM accounts")}
         restored = []
+        for o in self.rec.rows("SELECT * FROM paper_orders WHERE status = 'open' AND type = 'limit_maker'"):
+            self.rec.add("paper_orders", **{**o, "status": "canceled", "updated_ms": now_ms, "detail": {"why": "restart"}})
         for acc in self.accounts.values():
             params = self.account_params(acc)
             r = known.get(acc.acc_id)
@@ -843,9 +1127,10 @@ class LiveRunner:
 
     def __init__(self, cfg: LiveConfig, *, assets: list[str] | None = None, slip: dict | None = None,
                  month: str | None = None, symbols: SymbolTable | None = None, rest=None, rec: Recorder | None = None,
-                 connect=None, now_fn=None, verbose: bool = True):
+                 connect=None, now_fn=None, verbose: bool = True, notifier: Notifier | None = None):
         self.cfg = cfg
         run = cfg.run
+        self.notifier = notifier
         if assets is None:
             month, assets, slip = latest_universe(cfg.v4, pd.Timestamp.now(tz="UTC"), run.get("universe_month"))
         self.month = month
@@ -866,7 +1151,8 @@ class LiveRunner:
         self.books, self.bars = Books(), Bars()
         self.last_px: dict[tuple[str, str], float] = {}
         self.tickers: dict[tuple[str, str], BookTicker] = {}
-        self.broker = PaperBroker(cfg, self.books, rec, self.slip, price_fn=self.price, log=self.log)
+        self.broker = PaperBroker(cfg, self.books, rec, self.slip, price_fn=self.price, log=self.log,
+                                  notify=self.on_trade_note)
         self.engine = SignalEngine(cfg, self.assets)
         self.venues = [SPOT] + ([FUT] if cfg.leverage and cfg.strategies else [])
         self.baseline = Btc200(self.broker, f"{cfg.baseline}/spot") if cfg.baseline else None
@@ -881,6 +1167,11 @@ class LiveRunner:
         self._tick_err = (None, 0)
         self._closed = False
         self.stop: asyncio.Event | None = None
+        self.last_msg: dict[str, int] = {}          # piyasa → son akış mesajı (veri kesintisi uyarısı)
+        self.down: dict[str, int] = {}              # uyarı verilmiş piyasa → kesinti öncesi son mesaj
+        self.n_disconnect = 0
+        self._summary0: tuple[dict, int] = ({}, 0)  # son özetteki (broker.stats, kopma sayısı)
+        self._expect: dict | None = None            # backtest giriş istatistikleri (sağlık özeti, ilk kullanımda)
 
     # --- yardımcılar ---
     def now_ms(self) -> int:
@@ -919,11 +1210,13 @@ class LiveRunner:
     # --- olaylar ---
     def on_event(self, ev) -> None:
         t = self.now_ms()
+        self.last_msg[ev.venue] = t
         if isinstance(ev, AggTrade):
             self.last_px[(ev.venue, ev.asset)] = ev.price
-            self.broker.on_trade(ev.venue, ev.asset, ev.price, t)
+            self.broker.on_trade(ev.venue, ev.asset, ev.price, t, ev.qty, ev.buyer_maker)
         elif isinstance(ev, Depth):
-            self.books.apply(ev, t)
+            if self.books.apply(ev, t):
+                self.broker.on_book(ev.venue, ev.asset, t)
         elif isinstance(ev, Kline):
             if ev.closed:
                 self.on_bar(ev.venue, ev.asset, ev.open_ms, ev.o, ev.h, ev.l, ev.c, t)
@@ -958,6 +1251,69 @@ class LiveRunner:
         self.rec.event(self.now_ms(), kind, detail.get("venue"), detail, tb)
         if kind in ("connect", "disconnect", "stale", "stale_stream", "connect_error", "max_age", "handler_error"):
             self.log(f"{detail.get('venue')}: {kind} {json.dumps({k: v for k, v in detail.items() if k != 'venue'}, default=str)[:200]}")
+        if kind == "disconnect":
+            self.n_disconnect += 1
+        elif kind == "handler_error":
+            self.note(f"⚠️ hata ({VENUE_TR.get(detail.get('venue'), detail.get('venue'))} akışı): "
+                      f"{str(detail.get('error', detail))[:200]}", key="handler_error", every_s=1800)
+
+    # --- telefon bildirimi ---
+    def note(self, text: str, key: str | None = None, every_s: float = 0.0) -> None:
+        if self.notifier is not None:
+            self.notifier.send(text, key=key, every_s=every_s)
+
+    def on_trade_note(self, kind: str, acc: Account, pos: Position, **info) -> None:
+        self.note(trade_text(kind, acc, pos, **info))
+
+    def check_feeds(self, now: int) -> None:
+        """Bir piyasadan `notify_down_s` boyunca mesaj gelmezse bir uyarı, veri dönünce bir bilgi."""
+        lim = float(self.cfg.run["notify_down_s"]) * 1000
+        for venue, t in list(self.last_msg.items()):
+            name = VENUE_TR.get(venue, venue)
+            if venue in self.down:
+                if t > self.down[venue]:
+                    self.note(f"✅ {name} verisi geri geldi ({(t - self.down.pop(venue)) / 60_000:.0f} dk kesinti)")
+            elif now - t > lim:
+                self.down[venue] = t
+                self.note(f"⚠️ {name} verisi {(now - t) / 60_000:.0f} dk'dır gelmiyor (son mesaj {_tr(t)}); "
+                          "bağlantı yeniden deneniyor")
+        for venue, k in self.last_hour.items():          # k'nin kararı alındı; k+1'inki k + 2 sa'te bekleniyor
+            late = now - (k + 2 * H_MS)
+            if late > 15 * 60_000:
+                self.note(f"⚠️ {VENUE_TR.get(venue, venue)} saatlik kararı {late / 60_000:.0f} dk gecikti "
+                          f"(son karar {_tr(k + H_MS)})", key=f"stall_{venue}", every_s=3600)
+
+    def health_text(self, now: int) -> str:
+        if self._expect is None:
+            try:
+                self._expect = health.expectations([s.name for s in self.cfg.strategies])
+            except Exception as e:  # noqa: BLE001 — özet yine gönderilir
+                self._expect = {}
+                self.rec.event(now, "error", None, {"where": "expectations", "error": repr(e)[:300]})
+        return health.format_text(health.diagnose(self.rec.rows, now, 24.0, self._expect))
+
+    def summary_text(self, now: int) -> str:
+        """Günlük özet: hesap başına özsermaye (açık pozisyon), son özetten beri giriş/çıkış/kopma."""
+        stats0, disc0 = self._summary0
+        st = dict(self.broker.stats)
+        self._summary0 = (st, self.n_disconnect)
+        d = {k: v - stats0.get(k, 0) for k, v in st.items()}
+        rows: dict[str, list[str]] = defaultdict(list)
+        for acc in self.broker.accounts.values():
+            _, _, eq, n = self.broker.equity(acc)
+            label = "spot" if acc.venue == SPOT else f"{acc.lev:g}×"
+            rows[acc.name].append(f"{label} {eq:.1f}" + (f" ({n} açık)" if n else ""))
+        lines = [f"📊 Günlük özet {_tr(now)} · her hesap {self.cfg.capital:.0f}$ ile başladı"]
+        lines += [f"{name}: " + " · ".join(v) for name, v in rows.items()]
+        lines.append(f"Son özetten beri: {d.get('entries', 0)} giriş, "
+                     f"{sum(v for k, v in d.items() if k.startswith('exit_'))} çıkış, "
+                     f"{self.n_disconnect - disc0} bağlantı kopması")
+        return "\n".join(lines)
+
+    def drain_notify(self, now: int) -> None:
+        if self.notifier is not None:
+            for e in self.notifier.drain_errors():
+                self.rec.event(now, "notify_error", None, e)
 
     # --- REST tamamlama ---
     def spawn_backfill(self, venue, assets, start_ms, end_ms, tag):
@@ -1082,7 +1438,8 @@ class LiveRunner:
             self.rec.event(now, "decision_late", venue, {"hour": _utc(k), "late_s": (now - k - H_MS) / 1000})
         opened = self.broker.decide(sig, self.assets, now, enter=not late)
         sel = {n: [self.assets[j] for j in np.flatnonzero(sig["top"][n] & sig["ok"][n])] for n in sig["z"]}
-        self.log(f"karar {venue} {_utc(k)[:13]}h: aday {sel} → {len(opened)} giriş")
+        self.log(f"karar {venue} {_utc(k)[:13]}h: aday {sel} → {len(opened)} "
+                 f"{'maker alış emri' if self.broker.maker else 'giriş'}")
         return opened
 
     def check_decisions(self, now: int) -> None:
@@ -1165,6 +1522,14 @@ class LiveRunner:
             _, _, eq, n = self.broker.equity(acc)
             parts.append(f"{acc.acc_id}={eq:.2f}({n})")
         self.log("özsermaye: " + " ".join(parts))
+        h = self.cfg.run.get("notify_summary_utc_h")
+        if h is not None and (now // H_MS) % 24 == int(h):
+            self.note(self.summary_text(now))
+            try:
+                self.note(self.health_text(now))
+            except Exception as e:  # noqa: BLE001
+                self.rec.event(now, "error", None, {"where": "health", "error": repr(e)[:300]},
+                               traceback.format_exc(limit=8))
         if (now // H_MS) % 24 == 0 and self.month:
             cur = pd.Timestamp(now, unit="ms").to_period("M")
             f = cfg_path(_S, "universe") / f"{cur.strftime('%Y-%m')}.csv"
@@ -1177,6 +1542,8 @@ class LiveRunner:
         self.check_baseline(now)
         self.check_snapshot(now)
         self.hourly_chores(now)
+        self.check_feeds(now)
+        self.drain_notify(now)
 
     async def _timer(self, stop: asyncio.Event) -> None:
         run = self.cfg.run
@@ -1190,6 +1557,7 @@ class LiveRunner:
                 if key != self._tick_err[0] or now - self._tick_err[1] > 60_000:
                     self.rec.event(now, "error", None, {"where": "tick", "error": key}, traceback.format_exc(limit=10))
                     self._tick_err = (key, now)
+                    self.note(f"⚠️ hata (zamanlayıcı): {key[:200]}", key="tick_error", every_s=1800)
             m = time.monotonic()
             if m - last_flush >= float(run["flush_s"]):
                 self.rec.set_state("last_seen_ms", now)
@@ -1230,6 +1598,9 @@ class LiveRunner:
         try:
             await self.sync_clock()
             await self.warmup()
+            n_open = sum(len(a.positions) for a in self.broker.accounts.values())
+            self.note(f"▶️ Kâğıt takip başladı: {len(self.broker.accounts)} hesap, {len(self.assets)} coin "
+                      f"({self.month}), {n_open} açık pozisyon. Gerçek emir yok.")
             tasks = [asyncio.create_task(m.run(self.stop)) for m in self.managers()]
             tasks.append(asyncio.create_task(self._timer(self.stop)))
             if minutes:
@@ -1257,6 +1628,9 @@ class LiveRunner:
             self.rec.set_state("last_seen_ms", now)
         finally:
             self.rec.close()
+            if self.notifier is not None:
+                self.notifier.send("⏹ Kâğıt takip durdu.")
+                self.notifier.close()
         self.log("kayıt kapatıldı")
 
 
@@ -1272,7 +1646,12 @@ def main(argv: list[str] | None = None) -> int:
     cfg = load_config(p if p.is_absolute() else ROOT / p)
     if a.db:
         cfg.run["db"] = a.db
-    runner = LiveRunner(cfg)
+    nf = cfg.run.get("notify_file")
+    notifier = None
+    if nf:
+        q = Path(nf)
+        notifier = Notifier(q if q.is_absolute() else ROOT / q, header="📄 kâğıt takip · gerçek emir yok")
+    runner = LiveRunner(cfg, notifier=notifier)
     try:
         asyncio.run(runner.run(a.minutes))
     except KeyboardInterrupt:
