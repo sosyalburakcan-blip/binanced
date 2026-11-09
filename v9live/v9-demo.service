@@ -1,0 +1,24 @@
+# v9 demo botu (YALNIZCA demo-fapi; gerçek para yok). Kurallar: /root/binanced/v9live/KURALLAR.md
+#   kurulum: cp /root/binanced/v9live/v9-demo.service /etc/systemd/system/ && systemctl daemon-reload
+#            systemctl enable --now v9-demo
+#   günlük:  journalctl -u v9-demo -f        özet: /root/binanced/.venv/bin/python /root/binanced/v9live/status.py
+#   durdur:  systemctl stop v9-demo          (borsadaki kâr al ve acil stop emirleri yerinde kalır)
+[Unit]
+Description=v9 demo botu (saatlik ivme + emir defteri, teminat 150 $ / 10× = 1.500 $ pozisyon, demo hesap)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=/root/binanced
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+ExecStart=/root/binanced/.venv/bin/python /root/binanced/v9live/bot.py
+Restart=always
+RestartSec=60
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

@@ -179,6 +179,7 @@ class Depth:
     bids: tuple          # ((fiyat, miktar), ...) azalan fiyat
     asks: tuple          # artan fiyat
     event_ms: int
+    prev_id: int = 0     # vadeli `pu`: önceki mesajın `u`'su (zincir kırığı = kaçan mesaj); spotta 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +233,7 @@ def parse_message(venue: str, msg: Any, table: SymbolTable):
         bids = data["bids"] if "bids" in data else data["b"]
         asks = data["asks"] if "asks" in data else data["a"]
         uid = data["lastUpdateId"] if "lastUpdateId" in data else data.get("u", 0)
-        return Depth(venue, s.asset, int(uid), _levels(bids, m), _levels(asks, m), E)
+        return Depth(venue, s.asset, int(uid), _levels(bids, m), _levels(asks, m), E, int(data.get("pu") or 0))
     if kind == "aggTrade":
         return AggTrade(venue, s.asset, int(data["a"]), float(data["p"]) / m, float(data["q"]) * m, int(data["T"]),
                         bool(data["m"]), E)
@@ -421,7 +422,8 @@ class PublicRest:
     """Yalnızca herkese açık piyasa verisi; `ALLOWED` dışı yol → ValueError. Anahtar, imza, hesap yok."""
 
     ALLOWED = frozenset({"/api/v3/klines", "/api/v3/time", "/fapi/v1/klines", "/fapi/v1/time",
-                         "/fapi/v1/premiumIndex", "/fapi/v1/fundingRate"})
+                         "/fapi/v1/premiumIndex", "/fapi/v1/fundingRate", "/api/v3/exchangeInfo",
+                         "/fapi/v1/exchangeInfo", "/api/v3/aggTrades", "/fapi/v1/aggTrades"})
     LIMIT = {SPOT: 1000, FUT: 1500}
 
     def __init__(self, base: dict | None = None, session: requests.Session | None = None,
@@ -482,6 +484,24 @@ class PublicRest:
     def funding_rate(self, symbol: str, start_ms: int, end_ms: int) -> list[dict]:
         return self.get(FUT, "/fapi/v1/fundingRate", {"symbol": symbol, "startTime": int(start_ms),
                                                       "endTime": int(end_ms), "limit": 1000})
+
+    def exchange_info(self, venue: str) -> dict:
+        return self.get(venue, "/api/v3/exchangeInfo" if venue == SPOT else "/fapi/v1/exchangeInfo")
+
+    def agg_trades(self, venue: str, symbol: str, from_id: int, to_id: int, max_pages: int = 20) -> list[dict]:
+        """[from_id, to_id] kimlikli birleşik işlemler (kopmada kaçanlar), sayfalı; en fazla max_pages × 1000."""
+        path = "/api/v3/aggTrades" if venue == SPOT else "/fapi/v1/aggTrades"
+        out: list[dict] = []
+        cur = int(from_id)
+        for _ in range(int(max_pages)):
+            rows = self.get(venue, path, {"symbol": symbol, "fromId": cur, "limit": 1000})
+            if not rows:
+                break
+            out += [r for r in rows if int(r["a"]) <= to_id]
+            cur = int(rows[-1]["a"]) + 1
+            if cur > to_id or len(rows) < 1000:
+                break
+        return out
 
 
 def rest_bars(rows: list[list], mult: float = 1.0, now_ms: int | None = None) -> list[tuple]:
