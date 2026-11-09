@@ -48,6 +48,7 @@ girişten 60 dk sonra kontrol (+ Değ. 29 ek süre); açıkken son 2 dk'da ters 
 | `veri_csv/` | `trades`, `events`, `checks`, `spike_checks` tablolarının CSV kopyası (kolay okuma) |
 | `kayit/journal_v9-demo.log` | `journalctl -u v9-demo` tam günlüğü (06.11 06:21 → 08.11 16:38 UTC) |
 | `raporlar/` | İşlem incelemeleri (allreview, fullreview, lossreview), oturum kayıtları (OTURUM_2026-11-07/08) |
+| `raporlar/inceleme_2026-11-09.md` | 3 günün tamamının incelemesi (dönemler, sinyal ↔ rastgele, zarar kaynağı; defter arşiviyle) |
 | `raporlar/claude_notlari/` | Çalışma sırasında tutulan notlar (kronolojik karar defteri) |
 | `../src/trend/live/testnet.py`, `exchange.py`, `stream.py`, `notify.py` | Botun kullandığı imzalı demo istemcisi, borsa filtreleri, Telegram bildirimi |
 
